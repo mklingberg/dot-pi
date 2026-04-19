@@ -192,7 +192,13 @@ export default function (pi: ExtensionAPI) {
 
 		if (violationReason) {
 			if (shouldAsk) {
-				const confirmed = await ctx.ui.confirm("🛡️ Damage-Control Confirmation", `Dangerous command detected: ${violationReason}\n\nCommand: ${isToolCallEventType("bash", event) ? event.input.command : JSON.stringify(event.input)}\n\nDo you want to proceed?`, { timeout: 30000 });
+				const previewContent = isToolCallEventType("bash", event)
+					? `**⚠️ Rule triggered:** ${violationReason}\n\n\`\`\`bash\n${event.input.command}\n\`\`\``
+					: `**⚠️ Rule triggered:** ${violationReason}\n\n\`\`\`json\n${JSON.stringify(event.input, null, 2)}\n\`\`\``;
+
+				pi.sendMessage({ customType: "damage-control-preview", content: previewContent, display: true });
+
+				const confirmed = await ctx.ui.confirm("🛡️ Damage-Control", "Allow this operation?\n(See preview above for details)", { timeout: 30000 });
 
 				if (!confirmed) {
 					ctx.ui.setStatus(`⚠️ Last Violation Blocked: ${violationReason.slice(0, 30)}...`);
