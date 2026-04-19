@@ -1,0 +1,305 @@
+bashToolPatterns:
+  - pattern: '\brm\s+.*-[rRf]'
+    reason: rm with recursive or force flags
+  - pattern: '\brm\s+--recursive'
+    reason: rm with --recursive flag
+  - pattern: '\brm\s+--force'
+    reason: rm with --force flag
+  - pattern: '\bsudo\s+rm\b'
+    reason: sudo rm
+  - pattern: '\brmdir\s+--ignore-fail-on-non-empty'
+    reason: rmdir ignore-fail
+  - pattern: '\bchmod\s+(-[^\s]+\s+)*777\b'
+    reason: chmod 777 (world writable)
+  - pattern: '\bchmod\s+-[Rr].*777'
+    reason: recursive chmod 777
+  - pattern: '\bchown\s+-[Rr].*\broot\b'
+    reason: recursive chown to root
+  - pattern: '\bgit\s+reset\s+--hard\b'
+    reason: git reset --hard (use --soft or stash)
+  - pattern: '\bgit\s+clean\s+.*(--force\b|-[a-zA-Z]*[fd])'
+    reason: git clean with force/directory flags
+  - pattern: '\bgit\s+push\s+.*--force(?!-with-lease)'
+    reason: git push --force (use --force-with-lease)
+  - pattern: '\bgit\s+push\s+(-[^\s]*)*-f\b'
+    reason: git push -f (use --force-with-lease)
+  - pattern: '\bgit\s+push\s+.*--mirror\b'
+    reason: git push --mirror (overwrites ALL remote refs, deletes anything not local)
+  - pattern: '\bgit\s+push\s+.*--force-with-lease.*--no-force-if-includes'
+    reason: git push --no-force-if-includes (disables the force-with-lease safety check)
+  - pattern: '\bgit\s+stash\s+clear\b'
+    reason: git stash clear (deletes ALL stashes)
+  - pattern: '\bgit\s+reflog\s+expire\b'
+    reason: git reflog expire (destroys recovery mechanism)
+  - pattern: '\bgit\s+gc\s+.*--prune=now'
+    reason: git gc --prune=now (can lose dangling commits)
+  - pattern: '\bgit\s+filter-branch\b'
+    reason: git filter-branch (rewrites entire history)
+  - pattern: '\bgit\s+checkout\s+--\s*\.'
+    reason: Discards all uncommitted changes
+    ask: true
+  - pattern: '\bgit\s+restore\s+(--\s+)?\\.'
+    reason: Discards all uncommitted changes
+    ask: true
+  - pattern: '\bgit\s+submodule\s+deinit\b'
+    reason: git submodule deinit (removes submodule, can lose local changes)
+    ask: true
+  - pattern: '\bgit\s+stash\s+drop\b'
+    reason: Permanently deletes a stash
+    ask: true
+  - pattern: '\bgit\s+branch\s+(-[^\s]*)*-D'
+    reason: Force deletes branch (even if unmerged)
+    ask: true
+  - pattern: '\bgit\s+push\s+\S+\s+--delete\b'
+    reason: Deletes remote branch
+    ask: true
+  - pattern: '\bgit\s+push\s+\S+\s+:\S+'
+    reason: Deletes remote branch (old syntax)
+    ask: true
+  - pattern: '\bbrew\s+'
+    reason: Homebrew command (installs/modifies system packages)
+    ask: true
+  - pattern: '\bmkfs\.'
+    reason: filesystem format command
+  - pattern: '\bdd\s+.*of=/dev/'
+    reason: dd writing to device
+  - pattern: '\bkill\s+-9\s+-1\b'
+    reason: kill all processes
+  - pattern: '\bkillall\s+-9\b'
+    reason: killall -9
+  - pattern: '\bpkill\s+-9\b'
+    reason: pkill -9
+  - pattern: '\bhistory\s+-c\b'
+    reason: clearing shell history
+  - pattern: '\baz\s+group\s+delete\b'
+    reason: az group delete (deletes entire resource group and ALL resources in it)
+  - pattern: '\baz\s+vm\s+delete\b'
+    reason: az vm delete (deletes virtual machine)
+  - pattern: '\baz\s+vmss\s+delete\b'
+    reason: az vmss delete (deletes VM scale set)
+  - pattern: '\baz\s+storage\s+account\s+delete\b'
+    reason: az storage account delete (deletes storage account and all data)
+  - pattern: '\baz\s+storage\s+container\s+delete\b'
+    reason: az storage container delete (deletes blob container)
+  - pattern: '\baz\s+storage\s+blob\s+delete-batch\b'
+    reason: az storage blob delete-batch (bulk-deletes blobs)
+  - pattern: '\baz\s+sql\s+db\s+delete\b'
+    reason: az sql db delete (deletes SQL database)
+  - pattern: '\baz\s+sql\s+server\s+delete\b'
+    reason: az sql server delete (deletes SQL server and all databases)
+  - pattern: '\baz\s+cosmosdb\s+delete\b'
+    reason: az cosmosdb delete (deletes CosmosDB account)
+  - pattern: '\baz\s+aks\s+delete\b'
+    reason: az aks delete (deletes AKS cluster)
+  - pattern: '\baz\s+acr\s+delete\b'
+    reason: az acr delete (deletes container registry)
+  - pattern: '\baz\s+functionapp\s+delete\b'
+    reason: az functionapp delete (deletes Function App)
+  - pattern: '\baz\s+webapp\s+delete\b'
+    reason: az webapp delete (deletes Web App)
+  - pattern: '\baz\s+appservice\s+plan\s+delete\b'
+    reason: az appservice plan delete (deletes App Service plan)
+  - pattern: '\baz\s+keyvault\s+delete\b'
+    reason: az keyvault delete (deletes Key Vault)
+  - pattern: '\baz\s+keyvault\s+secret\s+delete\b'
+    reason: az keyvault secret delete (deletes a secret)
+  - pattern: '\baz\s+network\s+vnet\s+delete\b'
+    reason: az network vnet delete (deletes virtual network)
+  - pattern: '\baz\s+role\s+assignment\s+delete\b'
+    reason: az role assignment delete (removes RBAC permissions)
+  - pattern: '\baz\s+role\s+definition\s+delete\b'
+    reason: az role definition delete (deletes custom IAM role)
+  - pattern: '\baz\s+ad\s+user\s+delete\b'
+    reason: az ad user delete (deletes Azure AD user)
+  - pattern: '\baz\s+ad\s+sp\s+delete\b'
+    reason: az ad sp delete (deletes service principal)
+  - pattern: '\baz\s+ad\s+app\s+delete\b'
+    reason: az ad app delete (deletes AAD application registration)
+  - pattern: '\baz\s+lock\s+delete\b'
+    reason: az lock delete (removes resource lock — exposes resource to deletion)
+  - pattern: '\baz\s+resource\s+delete\b'
+    reason: az resource delete (generic resource delete)
+  - pattern: '\baz\s+monitor\s+log-analytics\s+workspace\s+delete\b'
+    reason: az monitor log-analytics workspace delete (deletes workspace and all logs)
+  - pattern: '\baz\s+deployment\s+group\s+delete\b'
+    reason: az deployment group delete (deletes a resource group deployment)
+  - pattern: '\baz\s+policy\s+assignment\s+delete\b'
+    reason: az policy assignment delete (removes compliance policy)
+  - pattern: '\baz\s+aks\s+nodepool\s+delete\b'
+    reason: az aks nodepool delete (deletes an AKS node pool)
+  - pattern: '\bkubectl\s+delete\s+namespace\b'
+    reason: kubectl delete namespace (deletes ALL resources in the namespace)
+  - pattern: '\bkubectl\s+delete\s+node\b'
+    reason: kubectl delete node (removes node from cluster)
+  - pattern: '\bkubectl\s+delete\s+pv\b'
+    reason: kubectl delete pv (deletes persistent volume, potential data loss)
+  - pattern: '\bkubectl\s+delete\s+pvc\b'
+    reason: kubectl delete pvc (deletes persistent volume claim, potential data loss)
+  - pattern: '\bkubectl\s+delete\s+(all\b|.*--all\b)'
+    reason: kubectl delete all (deletes all resources in namespace)
+  - pattern: '\bkubectl\s+delete\s+secret\b'
+    reason: kubectl delete secret (deletes Kubernetes secret)
+  - pattern: '\bkubectl\s+replace\s+.*--force\b'
+    reason: kubectl replace --force (deletes and recreates resource, may cause downtime)
+  - pattern: '\bkubectl\s+delete\s+(deployment|statefulset|daemonset|service|ingress|job|cronjob)\b'
+    reason: kubectl delete workload resource
+    ask: true
+  - pattern: '\bkubectl\s+drain\b'
+    reason: kubectl drain (evicts all pods from node, disrupts services)
+    ask: true
+  - pattern: '\bkubectl\s+cordon\b'
+    reason: kubectl cordon (marks node unschedulable)
+    ask: true
+  - pattern: '\bkubectl\s+scale\s+.*--replicas=0\b'
+    reason: kubectl scale --replicas=0 (scales to zero, stops all pods)
+    ask: true
+  - pattern: '\bkubectl\s+rollout\s+undo\b'
+    reason: kubectl rollout undo (rolls back a deployment)
+    ask: true
+  - pattern: '\bkubectl\s+config\s+use-context\b'
+    reason: kubectl config use-context (switches cluster context, risk of commands running on wrong cluster)
+    ask: true
+  - pattern: '\bhelm\s+(uninstall|delete)\b'
+    reason: helm uninstall/delete (removes a Helm release and all its resources)
+    ask: true
+  - pattern: '\bhelm\s+rollback\b'
+    reason: helm rollback (rolls back a Helm release to a previous version)
+    ask: true
+  - pattern: 'DELETE\s+FROM\s+\w+\s*;'
+    reason: DELETE without WHERE clause (will delete ALL rows)
+  - pattern: 'DELETE\s+\*\s+FROM'
+    reason: DELETE * (will delete ALL rows)
+  - pattern: '\bTRUNCATE\s+TABLE\b'
+    reason: TRUNCATE TABLE (will delete ALL rows)
+  - pattern: '\bDROP\s+TABLE\b'
+    reason: DROP TABLE
+  - pattern: '\bDROP\s+DATABASE\b'
+    reason: DROP DATABASE
+  - pattern: '\bDROP\s+SCHEMA\b'
+    reason: DROP SCHEMA
+  - pattern: '\bDELETE\s+FROM\s+\w+\s+WHERE\b.*\bid\s*='
+    reason: SQL DELETE with specific ID
+    ask: true
+
+zeroAccessPaths:
+  - ".env"
+  - ".env.local"
+  - ".env.development"
+  - ".env.production"
+  - ".env.staging"
+  - ".env.test"
+  - ".env.*.local"
+  - "*.env"
+  - "~/.ssh/"
+  - "~/.gnupg/"
+  - "~/Library/Keychains/"
+  - "~/Library/Application Support/com.apple.TCC/"
+  - "~/.aws/"
+  - "*-credentials.json"
+  - "*serviceAccount*.json"
+  - "*service-account*.json"
+  - "~/.azure/"
+  - "~/.kube/"
+  - "kubeconfig"
+  - "*-secret.yaml"
+  - "secrets.yaml"
+  - "~/.docker/"
+  - "*.pem"
+  - "*.key"
+  - "*.p12"
+  - "*.pfx"
+  - "*.tfstate"
+  - "*.tfstate.backup"
+  - ".terraform/"
+  - ".supabase/"
+  - "~/.netrc"
+  - "~/.npmrc"
+  - "~/.pypirc"
+  - "~/.config/gh/"
+  - "~/.git-credentials"
+  - ".git-credentials"
+  - "dump.sql"
+  - "backup.sql"
+  - "*.dump"
+
+readOnlyPaths:
+  - /System/
+  - /Library/
+  - /private/
+  - /Applications/
+  - /etc/
+  - /usr/
+  - /bin/
+  - /sbin/
+  - ~/.bash_history
+  - ~/.zsh_history
+  - ~/.node_repl_history
+  - ~/.bashrc
+  - ~/.zshrc
+  - ~/.profile
+  - ~/.bash_profile
+  - "package-lock.json"
+  - "yarn.lock"
+  - "pnpm-lock.yaml"
+  - "Gemfile.lock"
+  - "poetry.lock"
+  - "Pipfile.lock"
+  - "composer.lock"
+  - "Cargo.lock"
+  - "go.sum"
+  - "flake.lock"
+  - "bun.lockb"
+  - "uv.lock"
+  - "npm-shrinkwrap.json"
+  - "*.lock"
+  - "*.lockb"
+  - "*.min.js"
+  - "*.min.css"
+  - "*.bundle.js"
+  - "*.chunk.js"
+  - dist/
+  - build/
+  - .next/
+  - .nuxt/
+  - .output/
+  - __pycache__/
+  - .venv/
+  - venv/
+  - target/
+
+noDeletePaths:
+  - /System/
+  - /Library/
+  - /Applications/
+  - ~/Library/
+  - ~/.claude/
+  - ~/.pi/
+  - .pi/
+  - CLAUDE.md
+  - "LICENSE"
+  - "LICENSE.*"
+  - "COPYING"
+  - "COPYING.*"
+  - "NOTICE"
+  - "PATENTS"
+  - "README.md"
+  - "README.*"
+  - "CONTRIBUTING.md"
+  - "CHANGELOG.md"
+  - "CODE_OF_CONDUCT.md"
+  - "SECURITY.md"
+  - .git/
+  - .gitignore
+  - .gitattributes
+  - .gitmodules
+  - .github/
+  - .gitlab-ci.yml
+  - .circleci/
+  - Jenkinsfile
+  - .travis.yml
+  - azure-pipelines.yml
+  - Dockerfile
+  - "Dockerfile.*"
+  - docker-compose.yml
+  - "docker-compose.*.yml"
+  - .dockerignore

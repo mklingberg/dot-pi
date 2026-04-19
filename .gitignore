@@ -1,0 +1,4 @@
+agent/bin/
+agent/sessions/
+cache/
+node_modules/

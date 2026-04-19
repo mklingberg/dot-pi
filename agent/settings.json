@@ -1,0 +1,25 @@
+{
+  "lastChangelogVersion": "0.67.1",
+  "theme": "catppuccin-macchiato",
+  "defaultThinkingLevel": "medium",
+  "defaultProvider": "openai-codex",
+  "defaultModel": "gpt-5.3-codex",
+  "hideThinkingBlock": true,
+  "quietStartup": true,
+  "collapseChangelog": true,
+  "enabledModels": [
+    "github-copilot/claude-haiku-4.5",
+    "github-copilot/claude-sonnet-4.5",
+    "github-copilot/gpt-5.3-codex",
+    "github-copilot/gpt-5.1-codex-mini",
+    "openai-codex/gpt-5.3-codex",
+    "openai-codex/gpt-5.4-mini",
+    "openai-codex/gpt-5.4"
+  ],
+  "packages": [
+    "npm:pi-mcp-adapter",
+    "npm:pi-context",
+    "npm:pi-zentui"
+  ],
+  "enableSkillCommands": true
+}
