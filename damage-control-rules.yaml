@@ -56,8 +56,8 @@ bashToolPatterns:
   - pattern: '\bgit\s+push\s+\S+\s+:\S+'
     reason: Deletes remote branch (old syntax)
     ask: true
-  - pattern: '\bbrew\s+'
-    reason: Homebrew command (installs/modifies system packages)
+  - pattern: '\bbrew\s+(install|upgrade|uninstall|remove|reinstall|tap|untap|link|unlink|update|pin|unpin|autoremove|cleanup|bundle)\b'
+    reason: Homebrew command that installs or modifies packages
     ask: true
   - pattern: '\bmkfs\.'
     reason: filesystem format command

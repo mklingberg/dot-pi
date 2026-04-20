@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.67.1",
+  "lastChangelogVersion": "0.67.68",
   "theme": "catppuccin-macchiato",
   "defaultThinkingLevel": "medium",
   "defaultProvider": "openai-codex",
@@ -19,7 +19,8 @@
   "packages": [
     "npm:pi-mcp-adapter",
     "npm:pi-context",
-    "npm:pi-zentui"
+    "npm:pi-zentui",
+    "npm:pi-btw"
   ],
   "enableSkillCommands": true
 }
