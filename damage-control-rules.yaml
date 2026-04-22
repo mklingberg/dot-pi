@@ -182,14 +182,6 @@ bashToolPatterns:
     ask: true
 
 zeroAccessPaths:
-  - ".env"
-  - ".env.local"
-  - ".env.development"
-  - ".env.production"
-  - ".env.staging"
-  - ".env.test"
-  - ".env.*.local"
-  - "*.env"
   - "~/.ssh/"
   - "~/.gnupg/"
   - "~/Library/Keychains/"
@@ -229,7 +221,6 @@ readOnlyPaths:
   - /Applications/
   - /etc/
   - /usr/
-  - /bin/
   - /sbin/
   - ~/.bash_history
   - ~/.zsh_history
@@ -267,39 +258,21 @@ readOnlyPaths:
   - venv/
   - target/
 
+# NOTE: noDeletePaths blocks write/edit tool calls too, not just deletion.
+# Keep this list to truly irreplaceable paths only.
 noDeletePaths:
+  # System directories
   - /System/
   - /Library/
   - /Applications/
   - ~/Library/
   - ~/.claude/
-  - ~/.pi/
-  - .pi/
-  - CLAUDE.md
+  # Legal files
   - "LICENSE"
   - "LICENSE.*"
   - "COPYING"
   - "COPYING.*"
   - "NOTICE"
   - "PATENTS"
-  - "README.md"
-  - "README.*"
-  - "CONTRIBUTING.md"
-  - "CHANGELOG.md"
-  - "CODE_OF_CONDUCT.md"
-  - "SECURITY.md"
+  # Git internals — use git CLI, never modify directly
   - .git/
-  - .gitignore
-  - .gitattributes
-  - .gitmodules
-  - .github/
-  - .gitlab-ci.yml
-  - .circleci/
-  - Jenkinsfile
-  - .travis.yml
-  - azure-pipelines.yml
-  - Dockerfile
-  - "Dockerfile.*"
-  - docker-compose.yml
-  - "docker-compose.*.yml"
-  - .dockerignore
