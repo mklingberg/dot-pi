@@ -1,23 +1,23 @@
 bashToolPatterns:
   # rm safety model:
-  # - Always block recursive deletes.
-  # - For forced deletes, ask only when it looks like a single explicit file.
-  # - Block forced deletes when target expansion is likely (wildcards/multi-targets).
-  - pattern: '\brm\s+.*(?:--recursive|-[^\s]*[rR])'
+  # - Always block sudo rm and recursive deletes.
+  # - For forced deletes: block wildcard/multi-target, ask for single explicit target.
+  - pattern: '^\s*sudo\s+rm\b[^\n]*$'
+    reason: sudo rm
+
+  - pattern: '^\s*rm\b[^\n]*(?:--recursive|-[^\s\n]*[rR])[^\n]*$'
     reason: rm with recursive flag
-
-  - pattern: '\brm\s+.*(?:--force|-[^\s]*f).*([*?]|\[[^\]]+\])'
-    reason: rm with force flag and wildcard target(s)
-
-  - pattern: '\brm\s+(?:-[^\s]+\s+|--[^\s]+\s+)*(?:--\s+)?[^\s]+\s+[^\s]+'
-    reason: rm with multiple targets
-
-  - pattern: '\brm\s+.*(?:--force|-[^\s]*f)'
-    reason: rm with force flag on single explicit target
     ask: true
 
-  - pattern: '\bsudo\s+rm\b'
-    reason: sudo rm
+  - pattern: '^\s*rm\b[^\n]*(?:--force|-[^\s\n]*f)[^\n]*([*?]|\[[^\]\n]+\])[^\n]*$'
+    reason: rm with force flag and wildcard target(s)
+
+  - pattern: '^\s*rm\b(?:\s+(?:--[^\s]+|-[^\s]+))*\s+(?:--\s+)?(?!-)\S+\s+\S+(?:\s+\S+)*\s*$'
+    reason: rm with multiple targets
+
+  - pattern: '^\s*rm\b(?=[^\n]*(?:--force|-[^\s\n]*f))(?:\s+(?:--[^\s]+|-[^\s]+))*\s+(?:--\s+)?(?!-)\S+\s*$'
+    reason: rm with force flag on single explicit target
+    ask: true
   - pattern: '\brmdir\s+--ignore-fail-on-non-empty'
     reason: rmdir ignore-fail
   - pattern: '\bchmod\s+(-[^\s]+\s+)*777\b'
