@@ -180,12 +180,13 @@ export default function (pi: ExtensionAPI) {
 				const compileResult = compileBashRules(ctx, rules.bashToolPatterns);
 				compiledBashRules = compileResult.compiled;
 				invalidBashRuleCount = compileResult.invalid;
-				const source = rulesPath === projectRulesPath ? "project" : "global";
+				const isLocalRules = rulesPath === projectRulesPath;
 				const configured = rules.bashToolPatterns.length + rules.zeroAccessPaths.length + rules.readOnlyPaths.length + rules.noDeletePaths.length;
 				const active = compiledBashRules.length + rules.zeroAccessPaths.length + rules.readOnlyPaths.length + rules.noDeletePaths.length;
 				const configuredSuffix = configured !== active ? `, configured: ${configured}` : "";
 				const invalidSuffix = invalidBashRuleCount > 0 ? `, invalid regex: ${invalidBashRuleCount}` : "";
-				ctx.ui.notify(`🛡️ Damage-Control: Loaded rules (${source}) — ${active}${configuredSuffix}${invalidSuffix}.`);
+				const localSuffix = isLocalRules ? " (local)" : "";
+				ctx.ui.notify(`🛡️ Damage-Control: ${active}${configuredSuffix}${invalidSuffix} rules${localSuffix}.`);
 			} else {
 				compiledBashRules = [];
 				invalidBashRuleCount = 0;
