@@ -1,6 +1,7 @@
 bashToolPatterns:
   # rm safety model:
-  # - Always block sudo rm and recursive deletes.
+  # - Always block sudo rm.
+  # - Ask on recursive rm so user can explicitly approve.
   # - For forced deletes: block wildcard/multi-target, ask for single explicit target.
   - pattern: '^\s*sudo\s+rm\b[^\n]*$'
     reason: sudo rm

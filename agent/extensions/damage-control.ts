@@ -76,6 +76,15 @@ interface Rules {
 	noDeletePaths: string[];
 }
 
+interface CompiledRule extends Rule {
+	regex: RegExp;
+}
+
+interface CompileResult {
+	compiled: CompiledRule[];
+	invalid: number;
+}
+
 export default function (pi: ExtensionAPI) {
 	let rules: Rules = {
 		bashToolPatterns: [],
@@ -83,6 +92,8 @@ export default function (pi: ExtensionAPI) {
 		readOnlyPaths: [],
 		noDeletePaths: [],
 	};
+	let compiledBashRules: CompiledRule[] = [];
+	let invalidBashRuleCount = 0;
 
 	function resolvePath(p: string, cwd: string): string {
 		if (p.startsWith("~")) {
@@ -115,6 +126,42 @@ export default function (pi: ExtensionAPI) {
 		return regex.test(targetPath) || regex.test(relativePath) || targetPath.includes(resolvedPattern) || relativePath.includes(resolvedPattern);
 	}
 
+	function tokenizeCommand(command: string): string[] {
+		const rawTokens = command.match(/"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|\S+/g) || [];
+		return rawTokens
+			.map((t) => t.trim())
+			.map((t) => ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")) ? t.slice(1, -1) : t))
+			.filter(Boolean);
+	}
+
+	function extractPathLikeTokens(command: string): string[] {
+		const shellOperators = new Set(["&&", "||", "|", ";", "(", ")", ">", ">>", "<", "<<"]);
+		return tokenizeCommand(command).filter((token) => {
+			if (shellOperators.has(token)) return false;
+			if (/^\d?>/.test(token)) return false;
+			if (token.startsWith("-")) return false;
+			if (/^[A-Za-z_][A-Za-z0-9_]*=.*/.test(token)) return false;
+			return true;
+		});
+	}
+
+	function compileBashRules(ctx: { ui: { notify: (message: string) => void } }, list: Rule[]): CompileResult {
+		const compiled: CompiledRule[] = [];
+		let invalid = 0;
+		for (const rule of list) {
+			try {
+				compiled.push({ ...rule, regex: new RegExp(rule.pattern) });
+			} catch (err) {
+				invalid++;
+				ctx.ui.notify(`🛡️ Damage-Control: Invalid regex skipped (${rule.reason}): ${err instanceof Error ? err.message : String(err)}`);
+			}
+		}
+		if (invalid > 0) {
+			ctx.ui.notify(`🛡️ Damage-Control: Skipped ${invalid} invalid regex rule(s).`);
+		}
+		return { compiled, invalid };
+	}
+
 	pi.on("session_start", async (_event, ctx) => {
 		//applyExtensionDefaults(import.meta.url, ctx);
 		const projectRulesPath = path.join(ctx.cwd, ".pi", "damage-control-rules.yaml");
@@ -130,16 +177,26 @@ export default function (pi: ExtensionAPI) {
 					readOnlyPaths: loaded.readOnlyPaths || [],
 					noDeletePaths: loaded.noDeletePaths || [],
 				};
+				const compileResult = compileBashRules(ctx, rules.bashToolPatterns);
+				compiledBashRules = compileResult.compiled;
+				invalidBashRuleCount = compileResult.invalid;
 				const source = rulesPath === projectRulesPath ? "project" : "global";
-				ctx.ui.notify(`🛡️ Damage-Control: Loaded ${rules.bashToolPatterns.length + rules.zeroAccessPaths.length + rules.readOnlyPaths.length + rules.noDeletePaths.length} rules (${source}).`);
+				const configured = rules.bashToolPatterns.length + rules.zeroAccessPaths.length + rules.readOnlyPaths.length + rules.noDeletePaths.length;
+				const active = compiledBashRules.length + rules.zeroAccessPaths.length + rules.readOnlyPaths.length + rules.noDeletePaths.length;
+				const invalidSuffix = invalidBashRuleCount > 0 ? `, invalid regex: ${invalidBashRuleCount}` : "";
+				ctx.ui.notify(`🛡️ Damage-Control: Loaded rules (${source}) — active: ${active}, configured: ${configured}${invalidSuffix}.`);
 			} else {
+				compiledBashRules = [];
+				invalidBashRuleCount = 0;
 				ctx.ui.notify("🛡️ Damage-Control: No rules found at .pi/damage-control-rules.yaml (project or global)");
 			}
 		} catch (err) {
 			ctx.ui.notify(`🛡️ Damage-Control: Failed to load rules: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
-		ctx.ui.setStatus(`🛡️ Damage-Control Active: ${rules.bashToolPatterns.length + rules.zeroAccessPaths.length + rules.readOnlyPaths.length + rules.noDeletePaths.length} Rules`);
+		const activeRulesCount = compiledBashRules.length + rules.zeroAccessPaths.length + rules.readOnlyPaths.length + rules.noDeletePaths.length;
+		const statusInvalidSuffix = invalidBashRuleCount > 0 ? ` (invalid regex: ${invalidBashRuleCount})` : "";
+		ctx.ui.setStatus(`🛡️ Damage-Control Active: ${activeRulesCount} Rules${statusInvalidSuffix}`);
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
@@ -186,10 +243,9 @@ export default function (pi: ExtensionAPI) {
 			if (isToolCallEventType("bash", event)) {
 				const command = event.input.command;
 
-				// Check bashToolPatterns
-				for (const rule of rules.bashToolPatterns) {
-					const regex = new RegExp(rule.pattern);
-					if (regex.test(command)) {
+				// Check bashToolPatterns (precompiled during session_start)
+				for (const rule of compiledBashRules) {
+					if (rule.regex.test(command)) {
 						violationReason = rule.reason;
 						shouldAsk = !!rule.ask;
 						break;
@@ -198,12 +254,21 @@ export default function (pi: ExtensionAPI) {
 
 				// Check if bash command interacts with restricted paths
 				if (!violationReason) {
+					const pathTokens = extractPathLikeTokens(command);
 					for (const zap of rules.zeroAccessPaths) {
 						const expandedZap = zap.startsWith("~") ? path.join(os.homedir(), zap.slice(1)) : zap;
 						if (command.includes(expandedZap) || command.includes(zap)) {
 							violationReason = `Bash command references zero-access path: ${zap}`;
 							break;
 						}
+						for (const token of pathTokens) {
+							const resolvedToken = resolvePath(token, ctx.cwd);
+							if (isPathMatch(resolvedToken, zap, ctx.cwd) || isPathMatch(token, zap, ctx.cwd)) {
+								violationReason = `Bash command references zero-access path: ${zap}`;
+								break;
+							}
+						}
+						if (violationReason) break;
 					}
 				}
 
