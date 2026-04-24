@@ -1,6 +1,63 @@
 import type { ExtensionAPI, ToolCallEvent } from "@mariozechner/pi-coding-agent";
 import { isToolCallEventType } from "@mariozechner/pi-coding-agent";
-import { parse as yamlParse } from "yaml";
+function parseYamlValue(val: string): string | boolean | null {
+	val = val.trim();
+	if (val === "true") return true;
+	if (val === "false") return false;
+	if (val === "null" || val === "~") return null;
+	if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+		return val.slice(1, -1);
+	}
+	return val;
+}
+
+function yamlParse(content: string): Record<string, unknown> {
+	const lines = content.split("\n");
+	const result: Record<string, unknown> = {};
+	let currentKey: string | null = null;
+	let currentList: unknown[] | null = null;
+	let currentObj: Record<string, unknown> | null = null;
+
+	for (const rawLine of lines) {
+		const line = rawLine.trimEnd();
+		if (!line.trim() || line.trim().startsWith("#")) continue;
+
+		// Top-level key (e.g. "bashToolPatterns:")
+		const topKeyMatch = line.match(/^(\w+):\s*$/);
+		if (topKeyMatch) {
+			currentKey = topKeyMatch[1];
+			result[currentKey] = [];
+			currentList = result[currentKey] as unknown[];
+			currentObj = null;
+			continue;
+		}
+
+		// List item starting an object (e.g. "  - pattern: '...'")
+		const listObjMatch = line.match(/^  - (\w+):\s*(.*)$/);
+		if (listObjMatch && currentList !== null) {
+			currentObj = { [listObjMatch[1]]: parseYamlValue(listObjMatch[2]) };
+			currentList.push(currentObj);
+			continue;
+		}
+
+		// Plain list item (e.g. "  - somepath")
+		const listStrMatch = line.match(/^  - (.+)$/);
+		if (listStrMatch && currentList !== null) {
+			currentList.push(parseYamlValue(listStrMatch[1]));
+			currentObj = null;
+			continue;
+		}
+
+		// Object property continuation (e.g. "    reason: '...'")
+		const objPropMatch = line.match(/^    (\w+):\s*(.*)$/);
+		if (objPropMatch && currentObj !== null) {
+			currentObj[objPropMatch[1]] = parseYamlValue(objPropMatch[2]);
+			continue;
+		}
+	}
+
+	return result;
+}
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
