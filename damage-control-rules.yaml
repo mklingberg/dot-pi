@@ -238,7 +238,6 @@ readOnlyPaths:
   - ~/.zsh_history
   - ~/.node_repl_history
   - ~/.bashrc
-  - ~/.zshrc
   - ~/.profile
   - ~/.bash_profile
   - "package-lock.json"

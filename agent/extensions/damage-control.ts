@@ -186,7 +186,7 @@ export default function (pi: ExtensionAPI) {
 				const configuredSuffix = configured !== active ? `, configured: ${configured}` : "";
 				const invalidSuffix = invalidBashRuleCount > 0 ? `, invalid regex: ${invalidBashRuleCount}` : "";
 				const localSuffix = isLocalRules ? " (local)" : "";
-				ctx.ui.notify(`🛡️ Damage-Control: ${active}${configuredSuffix}${invalidSuffix} rules${localSuffix}.`);
+				ctx.ui.notify(`🛡️ Damage-Control: Loaded ${active}${configuredSuffix}${invalidSuffix} rules${localSuffix}.`);
 			} else {
 				compiledBashRules = [];
 				invalidBashRuleCount = 0;
