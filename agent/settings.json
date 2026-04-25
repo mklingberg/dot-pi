@@ -1,9 +1,9 @@
 {
   "lastChangelogVersion": "0.70.2",
-  "theme": "catppuccin-macchiato",
+  "theme": "catppuccin-frappe",
   "defaultThinkingLevel": "medium",
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.3-codex",
+  "defaultProvider": "github-copilot",
+  "defaultModel": "claude-sonnet-4.6",
   "hideThinkingBlock": true,
   "quietStartup": true,
   "collapseChangelog": true,
