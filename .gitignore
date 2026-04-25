@@ -4,3 +4,5 @@ agent/sessions/
 cache/
 node_modules/
 agent/auth.json
+agent/mcp-cache.json
+agent/mcp-npx-cache.json
