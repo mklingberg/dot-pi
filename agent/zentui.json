@@ -1,6 +1,6 @@
 {
   "icons": {
-    "cwd": "󰝰",
+    "cwd": "", //󰝰
     "git": "",
     "ahead": "↑",
     "behind": "↓",

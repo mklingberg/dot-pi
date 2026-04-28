@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.70.2",
+  "lastChangelogVersion": "0.70.5",
   "theme": "catppuccin-frappe",
   "defaultThinkingLevel": "medium",
   "defaultProvider": "github-copilot",
@@ -22,7 +22,8 @@
     "npm:pi-mcp-adapter",
     "npm:pi-context",
     "/Users/marcusklingberg/.pi/agent/extensions/zentui-local",
-    "npm:pi-btw"
+    "npm:pi-btw",
+    "git:github.com/ravshansbox/vscode-pi-companion"
   ],
   "enableSkillCommands": true
 }
