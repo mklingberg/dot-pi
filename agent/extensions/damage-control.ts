@@ -201,6 +201,17 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.setStatus(`🛡️ Damage-Control Active: ${activeRulesCount} Rules${statusInvalidSuffix}`);
 	});
 
+	function shouldAbortTurnOnViolation(reason: string): boolean {
+		const r = reason.toLowerCase();
+		// Reserve ctx.abort() for exceptional, high-impact operations.
+		return (
+			r.includes("filesystem format") ||
+			r.includes("dd writing to device") ||
+			r.includes("kill all processes") ||
+			r.includes("fork bomb")
+		);
+	}
+
 	pi.on("tool_call", async (event, ctx) => {
 		let violationReason: string | null = null;
 		let shouldAsk = false;
@@ -327,8 +338,8 @@ export default function (pi: ExtensionAPI) {
 				if (!confirmed) {
 					ctx.ui.setStatus(`⚠️ Last Violation Blocked: ${violationReason.slice(0, 30)}...`);
 					await pi.appendEntry("damage-control-log", { tool: event.toolName, input: event.input, rule: violationReason, action: "blocked_by_user" });
-					ctx.abort();
-					return { block: true, reason: `🛑 BLOCKED by Damage-Control: ${violationReason} (User denied)\n\nDO NOT attempt to work around this restriction. DO NOT retry with alternative commands, paths, or approaches that achieve the same result. Report this block to the user exactly as stated and ask how they would like to proceed.` };
+					if (shouldAbortTurnOnViolation(violationReason)) ctx.abort();
+					return { block: true, reason: `Blocked by Damage-Control: ${violationReason} (user denied). Do not retry or work around this restriction. Tell the user it was blocked and ask how they want to proceed.` };
 				} else {
 					await pi.appendEntry("damage-control-log", { tool: event.toolName, input: event.input, rule: violationReason, action: "confirmed_by_user" });
 					return { block: false };
@@ -337,8 +348,8 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(`🛑 Damage-Control: Blocked ${event.toolName} due to ${violationReason}`);
 				ctx.ui.setStatus(`⚠️ Last Violation: ${violationReason.slice(0, 30)}...`);
 				pi.appendEntry("damage-control-log", { tool: event.toolName, input: event.input, rule: violationReason, action: "blocked" });
-				ctx.abort();
-				return { block: true, reason: `🛑 BLOCKED by Damage-Control: ${violationReason}\n\nDO NOT attempt to work around this restriction. DO NOT retry with alternative commands, paths, or approaches that achieve the same result. Report this block to the user exactly as stated and ask how they would like to proceed.` };
+				if (shouldAbortTurnOnViolation(violationReason)) ctx.abort();
+				return { block: true, reason: `Blocked by Damage-Control: ${violationReason}. Do not retry or work around this restriction. Tell the user it was blocked and ask how they want to proceed.` };
 			}
 		}
 
