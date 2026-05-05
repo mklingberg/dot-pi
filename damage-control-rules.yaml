@@ -6,7 +6,7 @@ bashToolPatterns:
   - pattern: '^\s*sudo\s+rm\b[^\n]*$'
     reason: sudo rm
 
-  - pattern: '^\s*rm\b[^\n]*(?:--recursive|-[^\s\n]*[rR])[^\n]*$'
+  - pattern: '^\s*rm\b[^\n]*(?:--recursive|(?<=\s)-[^\s\n]*[rR])[^\n]*$'
     reason: rm with recursive flag
     ask: true
 
