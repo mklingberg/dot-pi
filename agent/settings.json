@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.74.2",
+  "lastChangelogVersion": "0.78.0",
   "theme": "catppuccin-frappe",
   "defaultThinkingLevel": "medium",
   "defaultProvider": "github-copilot",
@@ -24,7 +24,6 @@
     "npm:pi-zentui",
     "npm:pi-btw",
     "npm:@juicesharp/rpiv-ask-user-question",
-    "npm:context-mode",
     "npm:@tmustier/pi-usage-extension"
   ],
   "enableSkillCommands": true
