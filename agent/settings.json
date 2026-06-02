@@ -21,9 +21,9 @@
     "npm:pi-mcp-adapter",
     "npm:pi-context",
     "npm:pi-zentui",
-    "npm:pi-btw",
     "npm:@juicesharp/rpiv-ask-user-question",
-    "npm:@tmustier/pi-usage-extension"
+    "npm:@tmustier/pi-usage-extension",
+    "npm:@tintinweb/pi-subagents"
   ],
   "enableSkillCommands": true
 }
