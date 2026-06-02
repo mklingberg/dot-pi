@@ -1,5 +1,5 @@
 {
-  "lastChangelogVersion": "0.73.0",
+  "lastChangelogVersion": "0.74.2",
   "theme": "catppuccin-frappe",
   "defaultThinkingLevel": "medium",
   "defaultProvider": "github-copilot",
@@ -23,7 +23,6 @@
     "npm:pi-context",
     "npm:pi-zentui",
     "npm:pi-btw",
-    "git:github.com/ravshansbox/vscode-pi-companion",
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:context-mode",
     "npm:@tmustier/pi-usage-extension"

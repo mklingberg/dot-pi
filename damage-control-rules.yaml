@@ -15,6 +15,7 @@ bashToolPatterns:
 
   - pattern: '^\s*rm\b(?:\s+(?:--[^\s]+|-[^\s]+))*\s+(?:--\s+)?(?!-)\S+\s+\S+(?:\s+\S+)*\s*$'
     reason: rm with multiple targets
+    ask: true
 
   - pattern: '^\s*rm\b(?=[^\n]*(?:--force|-[^\s\n]*f))(?:\s+(?:--[^\s]+|-[^\s]+))*\s+(?:--\s+)?(?!-)\S+\s*$'
     reason: rm with force flag on single explicit target
@@ -286,4 +287,11 @@ noDeletePaths:
   - "NOTICE"
   - "PATENTS"
   # Git internals — use git CLI, never modify directly
-  - .git/
+  # Lock files (.git/index.lock, .git/config.lock, etc.) are intentionally excluded
+  # so agents can clean up stale locks (e.g. rm .git/index.lock)
+  - .git/config
+  - .git/HEAD
+  - .git/packed-refs
+  - .git/refs/
+  - .git/objects/
+  - .git/hooks/

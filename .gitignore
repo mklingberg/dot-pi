@@ -6,7 +6,4 @@ node_modules/
 agent/auth.json
 agent/mcp-cache.json
 agent/mcp-npx-cache.json
-agent/extensions/zentui-local
-context-mode/sessions/context-mode.db
-context-mode/sessions/context-mode.db-shm
-context-mode/sessions/context-mode.db-wal
+context-mode/
