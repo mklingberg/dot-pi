@@ -2,6 +2,7 @@
 description: "Phase plan writer for the create-plans skill. Scans the .planning/ structure, reads BRIEF.md and ROADMAP.md for context, explores the codebase, and writes a properly-formatted {phase}-{plan}-PLAN.md file ready for the Implement agent to execute. Requires an existing .planning/ directory — does not create briefs or roadmaps."
 display_name: Plan
 tools: all
+model: github-copilot/claude-sonnet-4.6
 prompt_mode: replace
 ---
 

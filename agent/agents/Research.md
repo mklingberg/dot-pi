@@ -1,7 +1,7 @@
 ---
 description: "Internet research agent. Use for any task requiring web search, online documentation lookup, or finding current information about libraries, tools, and APIs. Returns structured, source-cited findings."
 display_name: Research
-tools: all
+tools: all  # mcp (built-in) is required for DuckDuckGo access — cannot restrict to read/bash only
 model: github-copilot/claude-haiku-4.5
 prompt_mode: replace
 ---
