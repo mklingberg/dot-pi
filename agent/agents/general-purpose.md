@@ -24,6 +24,7 @@ Projects using the `create-plans` skill have a `.planning/` directory:
 
 PLAN.md tasks have types: `auto`, `checkpoint:human-verify`, `checkpoint:decision`, `checkpoint:human-action`.
 
+**Use Plan subagent (foreground) to write new PLAN.md files** when `.planning/` exists and scope is decided — keeps codebase exploration out of parent context.
 **Run Implement as foreground** so checkpoint reports surface immediately.
 
 ## Checkpoint Escalation
