@@ -37,13 +37,7 @@ ls .planning/phases/<that-phase>/*-SUMMARY.md | sort
 # Execute the first PLAN.md that has no matching SUMMARY.md
 ```
 
-Once identified, confirm before starting:
-```
-Plan: .planning/phases/<phase>/<plan>-PLAN.md
-[Plan X of Y for Phase Z]
-
-Proceeding with execution...
-```
+Once identified, state the plan path and proceed immediately.
 
 ---
 
@@ -79,53 +73,15 @@ Execute autonomously:
 6. Continue to next task
 
 ### `type="checkpoint:*"` tasks
-**STOP execution. Display the checkpoint. Wait for user.**
+**STOP execution and display:**
 
 ```
-════════════════════════════════════════
-CHECKPOINT: [human-verify | decision | human-action]
-Task [X] of [Y]: [name]
-════════════════════════════════════════
+CHECKPOINT [X/Y]: [type] — [name]
 
-[checkpoint content — see formats below]
-
-════════════════════════════════════════
+[content — see formats below]
 ```
 
-**For `checkpoint:human-verify`:**
-```
-I built: [what was automated]
-
-How to verify:
-1. [exact command or URL]
-2. [what to check]
-3. [expected behavior]
-
-Type "approved" to continue, or describe issues to fix.
-```
-
-**For `checkpoint:decision`:**
-```
-Decision needed: [what]
-Context: [why it matters]
-
-Options:
-A. [option-a name] — [pros] / [cons]
-B. [option-b name] — [pros] / [cons]
-
-[Resume signal from plan]
-```
-
-**For `checkpoint:human-action`:**
-```
-I automated: [what Claude already did]
-
-Need your help with: [the one unavoidable manual step]
-Steps: [numbered instructions]
-I'll verify after: [how Claude will confirm]
-
-Type "done" when complete.
-```
+Display the checkpoint with: what was automated, what needs verification or action, and the resume signal. Be brief — only what the user needs to act.
 
 **After user responds:** Verify if possible, then continue to next task.
 
@@ -145,18 +101,7 @@ During execution you WILL encounter work not in the plan. Apply these rules auto
 | **Rule 4 – Architectural** | Structural change required (new table, new service, framework switch) | STOP — present to user, wait for decision |
 | **Rule 5 – Enhancement** | Nice-to-have improvement, not essential | Log to `.planning/ISSUES.md`, continue |
 
-**Rule 4 format:**
-```
-⚠️ Architectural Decision Needed
-
-Task: [current task]
-Found: [what was discovered]
-Proposed: [the structural change]
-Why: [rationale]
-Impact: [what it affects]
-
-Proceed? (yes / different approach / defer)
-```
+**Rule 4 format:** State task, what was found, the proposed structural change, rationale, and impact. Ask: Proceed / different approach / defer.
 
 **When multiple rules apply:** Rule 4 takes priority. When unsure between 1–3 and 5, ask: "Does this affect correctness, security, or ability to complete?" — yes → fix (1–3), no → log (5).
 
@@ -166,26 +111,9 @@ Proceed? (yes / different approach / defer)
 
 If a CLI or API returns an auth error during an `auto` task:
 
-1. Recognize it's an auth gate — not a failure
-2. Stop the task
-3. Display a dynamic checkpoint:
-```
-════════════════════════════════════════
-CHECKPOINT: Authentication Required
-════════════════════════════════════════
-
-Task [X]: [name]
-Error: [what failed]
-
-To authenticate:
-[exact CLI command or where to get credentials]
-
-I'll verify after: [verification command]
-
-Type "done" when ready.
-════════════════════════════════════════
-```
-4. After user confirms: verify auth works, retry the task, continue
+1. Recognize it as an auth gate — not a failure
+2. Stop and display: task name, error, exact auth command, verification command
+3. After user confirms: verify auth works, retry the task, continue
 
 ---
 
@@ -271,8 +199,9 @@ Next: transition to next phase when ready.
 
 ## Constraints
 
-- **Read-only before starting:** Load all @context references before touching any files
-- **Sequential:** Never skip tasks or reorder them without user instruction
-- **Stop at checkpoints:** Never hallucinate checkpoint completion or auto-approve
-- **No plan creation:** If there is no PLAN.md to execute, report this and stop
-- **No open-ended research:** If the plan references a decision that wasn't made, surface it as a checkpoint rather than deciding yourself
+- Load all @context references before touching files
+- Execute tasks sequentially — never skip or reorder without instruction
+- Never auto-approve checkpoints
+- If no PLAN.md exists, report it and stop
+- If a decision was never made, surface it as a checkpoint — don't decide yourself
+- **Be concise:** Skip preamble between tasks. Report results, not process.
