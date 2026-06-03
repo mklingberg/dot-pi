@@ -1,5 +1,5 @@
 ---
-description: "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you."
+description: "General-purpose agent for multi-step tasks that require both reading and acting — finding code and then modifying it, executing commands, writing files, or combining several tools in sequence. Use when the task goes beyond locating things. For locating specific files, symbols, or patterns in the codebase, use Explore instead. For web search or online research, use Research instead."
 display_name: General
 tools: all
 prompt_mode: append
@@ -24,6 +24,7 @@ Projects using the `create-plans` skill have a `.planning/` directory:
 
 PLAN.md tasks have types: `auto`, `checkpoint:human-verify`, `checkpoint:decision`, `checkpoint:human-action`.
 
+**Use Research subagent for any web search or online research** — do not call duckduckgo MCP tools directly.
 **Use Plan subagent (foreground) to write new PLAN.md files** when `.planning/` exists and scope is decided — keeps codebase exploration out of parent context.
 **Run Implement as foreground** so checkpoint reports surface immediately.
 

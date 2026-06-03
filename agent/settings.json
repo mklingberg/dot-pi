@@ -23,7 +23,8 @@
     "npm:pi-zentui",
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@tmustier/pi-usage-extension",
-    "npm:@tintinweb/pi-subagents"
+    "npm:@tintinweb/pi-subagents",
+    "npm:mcp-duckduckgo"
   ],
   "enableSkillCommands": true
 }
