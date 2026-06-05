@@ -65,12 +65,6 @@ grill-with-docs  →  to-plan        (small / clear scope)
 
 The net effect: cleaner features, smaller review surfaces, durable project memory, and a workflow that keeps getting more reliable as the work gets bigger.
 
-## Defaults
-
-- **Provider:** GitHub Copilot
-- **Model:** Claude Sonnet 4.6
-- **Theme:** Catppuccin Frappé
-
 ## Structure
 
 The repo layout mirrors the workflow: agent behavior at the core, extensions for guardrails and ergonomics, and top-level safety rules protecting the shell.
