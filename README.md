@@ -1,10 +1,12 @@
 # dot-pi
 
-Personal [pi](https://github.com/earendil-works/pi) config — agents, skills, and safety rules for solo agentic development.
+A [pi](https://github.com/earendil-works/pi) setup for structured, context-safe solo development — durable plans, specialist subagents, and guardrails that keep long-running work reliable.
 
-> Your setup. Your rules. No compromises.
+> Structured agents. Durable plans. Safer execution.
 
 ## Agent Pipeline
+
+This setup turns one-shot prompting into a real delivery workflow: plan deliberately, execute in focused chunks, verify independently, and preserve enough context to keep moving across long sessions.
 
 ```
 General
@@ -14,39 +16,45 @@ General
                  └─ Debug (on failure → proposes fixes → back to Implement)
 ```
 
-`Explore` and `Research` are side specialists — spawned as needed to keep search and web context out of the main orchestrator.
+`Explore` and `Research` are side specialists — pulled in on demand so search and web lookup never bloat the orchestrator's context.
 
 | Agent | Model | Role |
 |---|---|---|
-| **General** | Sonnet 4.6 | Orchestrator — multi-step tasks, checkpoint resolution |
-| **Plan** | Sonnet 4.6 | Writes executable PLAN.md from `.planning/` structure |
-| **Implement** | Haiku 4.5 | Executes PLAN.md tasks, stages changes, writes SUMMARY.md |
-| **Review** | Haiku 4.5 | Verifies `<done>` conditions + success criteria post-implement |
-| **Debug** | Sonnet 4.6 | Diagnoses blockers/failures, proposes fix options — read-only |
-| **Explore** | Haiku 4.5 | Read-only codebase search — files, symbols, patterns |
-| **Research** | Haiku 4.5 | Web search and online documentation lookup |
+| **General** | Sonnet 4.6 | Keeps the workflow moving — orchestration, delegation, checkpoint resolution |
+| **Plan** | Sonnet 4.6 | Turns scoped work into executable `PLAN.md` files |
+| **Implement** | Haiku 4.5 | Executes the plan, stages changes, writes durable summaries |
+| **Review** | Haiku 4.5 | Verifies success criteria independently against real output |
+| **Debug** | Sonnet 4.6 | Diagnoses blockers and failures, then hands back a concrete fix path |
+| **Explore** | Haiku 4.5 | Fast read-only codebase search for files, symbols, and patterns |
+| **Research** | Haiku 4.5 | Focused web research and documentation lookup |
 
 ## Workflow: Starting a Feature
 
-Most AI coding setups fail the same way: the agent lacks context, makes wrong assumptions, drifts mid-task, or produces a 500-line change you can't review. This workflow is designed to eliminate all of that.
+Most AI coding workflows break in predictable ways: giant prompts, missing context, unreviewable diffs, and agents that forget why a decision was made two hours ago. This setup is built to prevent that.
 
 ### Step 1 — Align before you build (`grill-with-docs`)
 
-Before any code is written, `grill-with-docs` interviews you relentlessly about your plan — then cross-references it against the actual codebase. Terminology gets sharpened against `CONTEXT.md`. Ambiguous decisions get locked in as ADRs. By the end, you and the agent share the same mental model. No silent assumptions, no revisiting settled debates mid-implementation.
+Start by pressure-testing the idea before code exists. `grill-with-docs` doesn't just ask questions — it checks your plan against the real codebase, sharpens terminology against `CONTEXT.md`, and turns fuzzy architecture calls into explicit ADRs. The payoff is simple: shared understanding up front, fewer wrong turns later. No silent assumptions. No mid-implementation re-litigation.
 
-### Step 2 — Capture the plan as structured, context-safe chunks
+### Step 2 — Turn scope into reviewable, context-safe execution chunks
 
-This is where the setup earns its keep. LLM context degrades as it fills up — long tasks produce worse output near the end. The planning layer solves this by breaking work into independently executable `PLAN.md` files, each sized to stay within ~50% of the model's context window. Quality stays consistent from the first task to the last.
+This is the core advantage of the setup. Instead of betting an entire feature on one bloated prompt, the planning layer breaks work into small, high-signal `PLAN.md` files that stay comfortably within the model's effective context window. That means better consistency, smaller diffs, easier review, and cleaner recovery when a task needs to pause or resume.
 
-**`to-plan`** — fast path for small, well-understood scope. Converts the current conversation directly into a `PLAN.md` with no further questions. Run it right after the grilling session.
+**`to-plan`** is the fast path. When the design is already clear, it converts the current conversation directly into an executable `PLAN.md` — no extra ceremony, no re-interviewing.
 
-**`create-plans`** — full planning session for large or multi-phase work. Produces a `BRIEF.md`, a `ROADMAP.md`, and a structured `.planning/` directory of phase plans that persist across sessions. Every future agent starts with the full picture — architectural decisions, prior deviations, the *why* behind every choice.
+**`create-plans`** is the scaling path. For larger or multi-phase work, it builds a durable planning system: `BRIEF.md`, `ROADMAP.md`, and a `.planning/` directory of phase plans and summaries. The value isn't just structure — it's continuity. Every future agent inherits the decisions, trade-offs, and history that would otherwise be lost in a fresh session.
 
-### Step 3 — Subagents take over
+### Step 3 — Let specialist subagents do the heavy lifting
 
-Once the plan exists, the main agent steps back. Dedicated subagents spin up to own execution end-to-end — keeping the orchestrator's context clean and each agent focused on a single responsibility.
+Once the plan is written, the orchestrator stops doing execution work itself. Specialist subagents take over so the main agent can stay focused on coordination and decisions instead of burning context on implementation details.
 
-`Implement` picks up the `PLAN.md`, works through tasks sequentially, stages the resulting changes, and writes a `SUMMARY.md` for durable handoff. `Review` spins up independently to verify every `<done>` condition against the actual output — not the agent's self-report. If something breaks, `Debug` takes over read-only, diagnoses the root cause, and hands a concrete fix back to `Implement` to retry. Human intervention stays minimal unless checkpoints or policy gates require it.
+`Implement` owns execution. It picks up a `PLAN.md`, works through it sequentially, stages the resulting changes, and writes a `SUMMARY.md` that preserves exactly what happened.
+
+`Review` owns verification. It checks the output against the actual `<done>` conditions and success criteria — independent validation, not self-grading.
+
+`Debug` owns failure diagnosis. When something breaks, it investigates read-only, isolates the root cause, and hands a concrete fix path back to `Implement`.
+
+The result is a workflow where planning, execution, verification, and debugging are split across focused agents instead of crammed into one overloaded context.
 
 ```
 grill-with-docs  →  to-plan        (small / clear scope)
@@ -55,15 +63,17 @@ grill-with-docs  →  to-plan        (small / clear scope)
                      Implement → Review → repeat
 ```
 
-The result: features that ship cleanly, plans that survive context resets, and an agent that doesn't re-litigate decisions you've already made.
+The net effect: cleaner features, smaller review surfaces, durable project memory, and a workflow that keeps getting more reliable as the work gets bigger.
 
-## Settings
+## Defaults
 
-- **Default provider:** GitHub Copilot
-- **Default model:** Claude Sonnet 4.6
+- **Provider:** GitHub Copilot
+- **Model:** Claude Sonnet 4.6
 - **Theme:** Catppuccin Frappé
 
 ## Structure
+
+The repo layout mirrors the workflow: agent behavior at the core, extensions for guardrails and ergonomics, and top-level safety rules protecting the shell.
 
 ```
 ~/.pi/
@@ -92,15 +102,15 @@ The result: features that ship cleanly, plans that survive context resets, and a
 | Package | Purpose |
 |---|---|
 | `pi-zentui` | Starship-inspired statusline |
-| `pi-context` | Context management tools |
-| `pi-mcp-adapter` | MCP server adapter |
-| `@tintinweb/pi-subagents` | Claude Code-style autonomous subagents |
-| `@juicesharp/rpiv-ask-user-question` | Structured user questions |
+| `pi-context` | Context management and durable session handoffs |
+| `pi-mcp-adapter` | MCP server integration |
+| `@tintinweb/pi-subagents` | Autonomous specialist subagents |
+| `@juicesharp/rpiv-ask-user-question` | Structured user clarification flows |
 | `@tmustier/pi-usage-extension` | Usage tracking |
 
 ## Under the Hood
 
-Pi uses [RTK](https://github.com/rtk-ai/rtk) — a CLI proxy that intercepts bash command output and filters/compresses it before it reaches the LLM context. Achieves 60–90% token savings on common dev commands (`git`, `grep`, `ls`, test runners, etc.) with <10ms overhead.
+[RTK](https://github.com/rtk-ai/rtk) sits in front of shell output and aggressively compresses noisy command results before they hit model context. On common dev commands (`git`, `grep`, `ls`, test runners), that usually means 60–90% token savings with negligible overhead.
 
 ## New machine setup
 
