@@ -26,8 +26,11 @@ Projects using the `create-plans` skill have a `.planning/` directory:
 PLAN.md tasks have types: `auto`, `checkpoint:human-verify`, `checkpoint:decision`, `checkpoint:human-action`.
 
 **Use Research subagent for any web search or online research** — do not call duckduckgo MCP tools directly.
+**Use Explore subagent for any codebase search** — finding files, symbols, or patterns — keeps search output out of parent context.
 **Use Plan subagent (foreground) to write new PLAN.md files** when `.planning/` exists and scope is decided — keeps codebase exploration out of parent context.
 **Run Implement as foreground** so checkpoint reports surface immediately.
+**Run Review (foreground) after every Implement completes** — pass the PLAN.md path. Only surface result to user if Review reports FAIL.
+**Run Debug when Implement exits with a blocker or Review reports FAIL** — pass the error/failure output. Evaluate proposed fix options, select one, re-invoke Implement.
 
 ## Checkpoint Escalation
 
