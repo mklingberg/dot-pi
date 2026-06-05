@@ -26,23 +26,25 @@ General
 
 ## Workflow: Starting a Feature
 
-Skills from `~/.agents/skills/` plug into the agent pipeline at the planning stage. The typical sequence:
+Most AI coding setups fail the same way: the agent lacks context, makes wrong assumptions, drifts mid-task, or produces a 500-line change you can't review. This workflow is designed to eliminate all of that.
 
-**Step 1 — Establish domain understanding** (`grill-with-docs`)
+### Step 1 — Align before you build (`grill-with-docs`)
 
-Challenge your plan against the existing codebase. Cross-references code, aligns terminology with `CONTEXT.md`, crystallises hard decisions into ADRs. End with a shared mental model of *what* and *why*.
+Before any code is written, `grill-with-docs` interviews you relentlessly about your plan — then cross-references it against the actual codebase. Terminology gets sharpened against `CONTEXT.md`. Ambiguous decisions get locked in as ADRs. By the end, you and the agent share the same mental model. No silent assumptions, no revisiting settled debates mid-implementation.
 
-**Step 2a — Plan is already clear** (`to-plan`)
+### Step 2 — Capture the plan as structured, context-safe chunks
 
-Run immediately after the grilling session in the same conversation. Converts established context into a `PLAN.md` — no new questions asked. Fast path for small/clear scope.
+This is where the setup earns its keep. LLM context degrades as it fills up — long tasks produce worse output near the end. The planning layer solves this by breaking work into independently executable `PLAN.md` files, each sized to stay within ~50% of the model's context window. Quality stays consistent from the first task to the last.
 
-**Step 2b — Large or multi-phase scope** (`create-plans`)
+**`to-plan`** — fast path for small, well-understood scope. Converts the current conversation directly into a `PLAN.md` with no further questions. Run it right after the grilling session.
 
-Starts a full planning session: brief → roadmap → phases → individual `PLAN.md` files. Use when `to-plan` would produce a plan too large for one execution context, or when you want a durable `.planning/` structure across many sessions.
+**`create-plans`** — full planning session for large or multi-phase work. Produces a `BRIEF.md`, a `ROADMAP.md`, and a structured `.planning/` directory of phase plans that persist across sessions. Every future agent starts with the full picture — architectural decisions, prior deviations, the *why* behind every choice.
 
-**Step 3 — Execute**
+### Step 3 — Subagents take over
 
-Hand the `PLAN.md` to the `Plan` agent (if needed) then `Implement`. `Review` runs automatically after each plan. Chain phases until done.
+Once the plan exists, the main agent steps back. Dedicated subagents spin up to own execution end-to-end — keeping the orchestrator's context clean and each agent focused on a single responsibility.
+
+`Implement` picks up the `PLAN.md`, works through tasks sequentially, and commits after each plan with a `SUMMARY.md`. `Review` spins up independently to verify every `<done>` condition against the actual output — not the agent's self-report. If something breaks, `Debug` takes over read-only, diagnoses the root cause, and hands a concrete fix back to `Implement` to retry. No human in the loop unless a checkpoint explicitly demands it.
 
 ```
 grill-with-docs  →  to-plan        (small / clear scope)
@@ -50,6 +52,8 @@ grill-with-docs  →  to-plan        (small / clear scope)
                           ↓
                      Implement → Review → repeat
 ```
+
+The result: features that ship cleanly, plans that survive context resets, and an agent that doesn't re-litigate decisions you've already made.
 
 ## Settings
 
