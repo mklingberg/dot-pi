@@ -106,12 +106,18 @@ The repo layout mirrors the workflow: agent behavior at the core, extensions for
 
 [RTK](https://github.com/rtk-ai/rtk) sits in front of shell output and aggressively compresses noisy command results before they hit model context. On common dev commands (`git`, `grep`, `ls`, test runners), that usually means 60–90% token savings with negligible overhead.
 
+This setup expects the `rtk` binary to be available in `PATH`. No separate `rtk init` hook is required here — `agent/extensions/rtk.ts` integrates it directly.
+
 ## New machine setup
 
 1. Install pi: `brew install pi-coding-agent`
-2. Clone: `git clone https://github.com/mklingberg/dot-pi.git ~/.pi`
-3. Add MCP servers manually: `~/.pi/agent/mcp.json` (see [MCP config](#mcp-config))
-4. Log in to providers: run `pi` and use `/login`
+2. Install RTK: `brew install rtk-ai/tap/rtk`
+3. Verify RTK: `rtk --version` and `rtk gain`
+4. Clone: `git clone https://github.com/mklingberg/dot-pi.git ~/.pi`
+5. Add MCP servers manually: `~/.pi/agent/mcp.json` (see [MCP config](#mcp-config))
+6. Log in to providers: run `pi` and use `/login`
+
+> RTK install note: avoid `cargo install rtk` — that can install the wrong project due to a crate name collision. Use Homebrew or the official install docs instead.
 
 ## MCP config
 
