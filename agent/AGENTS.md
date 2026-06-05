@@ -5,3 +5,5 @@ Challenge better approaches — explain why before proceeding.
 Never write code, edit files unless explicitly told to.
 
 Use ask_user_question for clarifications; grouping multiple questions in one call is fine.
+
+Git rules: never commit automatically; always `git add` new files explicitly; always `git mv` when moving files.
