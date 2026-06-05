@@ -1,24 +1,26 @@
 # dot-pi
 
-Personal [pi](https://github.com/earendil-works/pi) config — agents, skills, and safety rules for solo agentic development. 
+Personal [pi](https://github.com/earendil-works/pi) config — agents, skills, and safety rules for solo agentic development.
 
-- Your setup. Your rules. No compromises.
+> Your setup. Your rules. No compromises.
 
 ## Agent Pipeline
 
 ```
 General
   └─ Plan          (writes PLAN.md)
-       └─ Implement (executes PLAN.md → SUMMARY.md + commit)
+       └─ Implement (executes PLAN.md → SUMMARY.md + staged changes)
             └─ Review (verifies success criteria)
                  └─ Debug (on failure → proposes fixes → back to Implement)
 ```
+
+`Explore` and `Research` are side specialists — spawned as needed to keep search and web context out of the main orchestrator.
 
 | Agent | Model | Role |
 |---|---|---|
 | **General** | Sonnet 4.6 | Orchestrator — multi-step tasks, checkpoint resolution |
 | **Plan** | Sonnet 4.6 | Writes executable PLAN.md from `.planning/` structure |
-| **Implement** | Haiku 4.5 | Executes PLAN.md tasks, commits, writes SUMMARY.md |
+| **Implement** | Haiku 4.5 | Executes PLAN.md tasks, stages changes, writes SUMMARY.md |
 | **Review** | Haiku 4.5 | Verifies `<done>` conditions + success criteria post-implement |
 | **Debug** | Sonnet 4.6 | Diagnoses blockers/failures, proposes fix options — read-only |
 | **Explore** | Haiku 4.5 | Read-only codebase search — files, symbols, patterns |
@@ -44,7 +46,7 @@ This is where the setup earns its keep. LLM context degrades as it fills up — 
 
 Once the plan exists, the main agent steps back. Dedicated subagents spin up to own execution end-to-end — keeping the orchestrator's context clean and each agent focused on a single responsibility.
 
-`Implement` picks up the `PLAN.md`, works through tasks sequentially, and commits after each plan with a `SUMMARY.md`. `Review` spins up independently to verify every `<done>` condition against the actual output — not the agent's self-report. If something breaks, `Debug` takes over read-only, diagnoses the root cause, and hands a concrete fix back to `Implement` to retry. No human in the loop unless a checkpoint explicitly demands it.
+`Implement` picks up the `PLAN.md`, works through tasks sequentially, stages the resulting changes, and writes a `SUMMARY.md` for durable handoff. `Review` spins up independently to verify every `<done>` condition against the actual output — not the agent's self-report. If something breaks, `Debug` takes over read-only, diagnoses the root cause, and hands a concrete fix back to `Implement` to retry. Human intervention stays minimal unless checkpoints or policy gates require it.
 
 ```
 grill-with-docs  →  to-plan        (small / clear scope)
@@ -75,7 +77,9 @@ The result: features that ship cleanly, plans that survive context resets, and a
 │   │   ├── Debug.md              # Failure diagnosis, proposes fixes (Sonnet)
 │   │   └── general-purpose.md   # Orchestrator (Sonnet)
 │   ├── extensions/
-│   │   └── damage-control.ts     # Safety rules enforcement extension
+│   │   ├── damage-control.ts     # Safety rules enforcement extension
+│   │   ├── rtk.ts                # Bash rewrite via RTK for token savings
+│   │   └── hide-mcp-status.ts    # Hides noisy zero-state UI status
 │   ├── themes/                   # Custom themes (catppuccin variants + dracula)
 │   ├── AGENTS.md                 # Global agent behaviour rules
 │   ├── settings.json             # Main pi settings
