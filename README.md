@@ -44,6 +44,57 @@ This is the core advantage of the setup. Instead of betting an entire feature on
 
 **`create-plans`** is the scaling path. For larger or multi-phase work, it builds a durable planning system: `BRIEF.md`, `ROADMAP.md`, and a `.planning/` directory of phase plans and summaries. The value isn't just structure — it's continuity. Every future agent inherits the decisions, trade-offs, and history that would otherwise be lost in a fresh session.
 
+#### `.planning/` hierarchy
+
+`create-plans` uses a strict planning ladder so each artifact has one job and each later step can inherit the earlier decisions.
+
+```text
+BRIEF.md
+  ↓
+ROADMAP.md
+  ↓
+RESEARCH.md   (optional, when scope has unknowns)
+  ↓
+FINDINGS.md   (optional, research output)
+  ↓
+PLAN.md       (the executable prompt)
+  ↓
+SUMMARY.md    (what happened, what changed, what remains)
+```
+
+- `BRIEF.md` captures the product vision and current state.
+- `ROADMAP.md` breaks that vision into numbered phases.
+- `RESEARCH.md` / `FINDINGS.md` handle unknowns without polluting implementation plans.
+- `PLAN.md` is the actual execution prompt for the implementer agent.
+- `SUMMARY.md` is the durable record of outcome and completion state.
+
+#### `.planning/` folder structure
+
+```text
+.planning/
+├── BRIEF.md
+├── ROADMAP.md
+└── phases/
+    ├── 01-foundation/
+    │   ├── 01-01-PLAN.md
+    │   ├── 01-01-SUMMARY.md
+    │   ├── 01-02-PLAN.md
+    │   ├── 01-02-SUMMARY.md
+    │   └── .continue-here-01-02.md
+    └── 02-auth/
+        ├── 02-01-RESEARCH.md
+        ├── 02-01-FINDINGS.md
+        ├── 02-02-PLAN.md
+        └── 02-02-SUMMARY.md
+```
+
+Conventions from `create-plans`:
+- phase folders use `{phase}-{name}` like `01-foundation/`
+- plans use `{phase}-{plan}-PLAN.md`
+- summaries use `{phase}-{plan}-SUMMARY.md`
+- files sort chronologically, so plan/output pairs stay adjacent
+- a `.continue-here-*` file is a temporary handoff when work pauses mid-phase
+
 ### Step 3 — Let specialist subagents do the heavy lifting
 
 Once the plan is written, the orchestrator stops doing execution work itself. Specialist subagents take over so the main agent can stay focused on coordination and decisions instead of burning context on implementation details.
