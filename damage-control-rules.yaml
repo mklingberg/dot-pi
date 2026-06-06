@@ -3,10 +3,12 @@ bashToolPatterns:
   # - Always block sudo rm.
   # - Ask on recursive rm so user can explicitly approve.
   # - For forced deletes: block wildcard/multi-target, ask for single explicit target.
+  # Note: recursive flag pattern uses [A-Za-z]* (letters only) intentionally —
+  # [^\s\n]* would false-positive on flags like --show-origin containing 'r' mid-token.
   - pattern: '^\s*sudo\s+rm\b[^\n]*$'
     reason: sudo rm
 
-  - pattern: '^\s*rm\b[^\n]*(?:--recursive|(?<=\s)-[^\s\n]*[rR])[^\n]*$'
+  - pattern: '^\s*rm\b[^\n]*(?:--recursive|(?<=\s)-[A-Za-z]*[rR][A-Za-z]*)[^\n]*$'
     reason: rm with recursive flag
     ask: true
 
