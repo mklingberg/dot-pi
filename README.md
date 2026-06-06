@@ -212,3 +212,9 @@ This setup expects the `rtk` binary to be available in `PATH`. No separate `rtk 
   }
 }
 ```
+
+## Related repos
+
+- [dot-pi](https://github.com/mklingberg/dot-pi) — pi setup, agents, planning workflow
+- [dot-config](https://github.com/mklingberg/dot-config) — macOS/dev environment config
+- [dot-agents](https://github.com/mklingberg/dot-agents) — personal pi skill library
