@@ -70,15 +70,7 @@ Deviations section:
 - Auto-fixed: `[Rule N – Type] description · Task X · files changed`
 - Deferred: `ISS-001: description (Task X)`
 
-## 8. Commit
-
-Update ROADMAP.md (plan count if phase ongoing; status → Complete + date if last plan), then:
-```bash
-git add .planning/phases/<phase>/ .planning/ROADMAP.md <modified-source-files>
-git commit -m "feat(<phase>-<plan>): <one-liner>"
-```
-
-## 9. Report
+## 8. Report
 
 ```
 ✅ Plan <phase>-<plan> complete.
