@@ -8,8 +8,8 @@ Use ask_user_question for clarifications; grouping multiple questions in one cal
 
 Git rules: never commit automatically; always `git add` new files explicitly; always `git mv` when moving files.
 
-Background agents: never spin up a background agent on a task that could be invalidated by an upcoming scope decision. Establish scope first, then act.
+Background agents: establish scope before spawning. Never act on tasks that could be invalidated by pending decisions.
 
-Agent execution: run subagents in background (`run_in_background: true`) by default to keep the conversation free. Only run foreground when you need the result before you can proceed, or when the plan contains checkpoints requiring immediate escalation.
+Agent execution: always run subagents in background (`run_in_background: true`).
 
-File deletion: always use a single `rm` per command, no chaining, no multiple targets.
+File deletion: one `rm` per command, single target only.
