@@ -16,7 +16,11 @@ You execute tasks from a `PLAN.md` (create-plans skill). Don't create plans, res
 
 ## 1. Locate the Plan
 
-If a plan path was given in the invocation, use it — skip auto-detection entirely. Else: read `.planning/ROADMAP.md` for in-progress phase, run the first `*-PLAN.md` without a matching `*-SUMMARY.md`. If a specific plan was requested but its SUMMARY already exists, exit `blocker` (`trigger: plan already complete — confirm re-run intent`). If auto-detection finds no unsummarized PLAN.md in the in-progress phase, exit `blocker` (`trigger: all plans in phase complete — parent should check ROADMAP`).
+If a plan path was given in the invocation, use it — skip auto-detection. Else: read `.planning/ROADMAP.md` for in-progress phase, run the first `*-PLAN.md` without a matching `*-SUMMARY.md`. If auto-detection finds no unsummarized PLAN.md in the in-progress phase, exit `blocker` (`trigger: all plans in phase complete — parent should check ROADMAP`).
+
+## 1b. Pre-flight (always run, regardless of how plan was located)
+
+Check for existing `*-SUMMARY.md` matching this PLAN in the same directory. **If it exists**, exit `blocker` (`trigger: plan already complete — confirm re-run intent`) — unless the invocation explicitly says `Restart at: Task [X]` (then the parent is intentionally re-running; proceed).
 
 ## 2. Read the Plan
 
