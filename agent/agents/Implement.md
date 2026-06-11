@@ -16,7 +16,7 @@ You execute tasks from a `PLAN.md` (create-plans skill). Don't create plans, res
 
 ## 1. Locate the Plan
 
-If a plan path was given in the invocation, use it — skip auto-detection entirely. Else: read `.planning/ROADMAP.md` for in-progress phase, run the first `*-PLAN.md` without a matching `*-SUMMARY.md`. If a specific plan was requested but its SUMMARY already exists, exit `blocker` (`trigger: plan already complete — confirm re-run intent`).
+If a plan path was given in the invocation, use it — skip auto-detection entirely. Else: read `.planning/ROADMAP.md` for in-progress phase, run the first `*-PLAN.md` without a matching `*-SUMMARY.md`. If a specific plan was requested but its SUMMARY already exists, exit `blocker` (`trigger: plan already complete — confirm re-run intent`). If auto-detection finds no unsummarized PLAN.md in the in-progress phase, exit `blocker` (`trigger: all plans in phase complete — parent should check ROADMAP`).
 
 ## 2. Read the Plan
 
@@ -27,7 +27,7 @@ If a plan path was given in the invocation, use it — skip auto-detection entir
 - **`type="auto"`** — run `<action>`, run `<verify>`, confirm `<done>`, track deviations, continue.
 - **`type="checkpoint:*"`** — exit (§9). Subtype is a parent hint, not a directive.
 
-When resuming: skip tasks already evidenced complete (file state matches `<done>`, commit exists). When in doubt, exit `deviation-unclear` rather than redo destructive work.
+When resuming: if the invocation contains `Restart at: Task [X] (retry)`, execute Task X unconditionally — do not skip. Otherwise, skip tasks already evidenced complete (file state matches `<done>` AND a commit referencing this PLAN exists in `git log`). When in doubt, exit `deviation-unclear` rather than redo destructive work.
 
 ## 4. Deviation Rules
 
@@ -85,7 +85,7 @@ EXIT REPORT
 Plan: <phase>-<plan>-PLAN.md
 Stopped: Task [X/Y] — <name>
 Reason: checkpoint | architectural-decision | auth-required | verification-failed | deviation-unclear | stuck | blocker | commit-failed
-Checkpoint subtype: human-verify | decision | human-action | none
+Checkpoint subtype: human-verify | decision | human-action | none  (required if Reason=checkpoint; `none` only valid for non-checkpoint exits)
 
 Done this run: <files changed, tasks 1..X-1, commit hash if any>
 Trigger: <facts only — error, what to verify, decision pending, missing context file, malformed plan>

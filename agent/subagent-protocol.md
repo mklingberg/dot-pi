@@ -19,9 +19,9 @@ PLAN.md task types: `auto`, `checkpoint:human-verify`, `checkpoint:decision`, `c
 - **Research** — any web search / online docs. Don't call duckduckgo MCP directly.
 - **Explore** — any codebase search. Keeps search output out of parent context.
 - **PLAN.md** — write directly. Planning needs full context + user interaction.
-- **Implement** (fg) — well-specified mechanical plans. One Implement per PLAN.md.
-- **general-purpose** (fg) — plans needing ambiguous deviations, exploratory fixes, judgment beyond what's written.
-- **Review** (fg) — after every successful Implement. Pass PLAN.md path. Surface to user only on FAIL.
+- **Implement** — well-specified mechanical plans. One Implement per PLAN.md.
+- **general-purpose** — plans needing ambiguous deviations, exploratory fixes, judgment beyond what's written.
+- **Review** — after every Implement that returned a **Completion Report** (§8 in Implement.md), not after an EXIT REPORT. Pass PLAN.md path. Surface to user only on FAIL.
 - **Debug** — on Implement exits `verification-failed`, `stuck`, or `blocker`. Pick a fix, re-invoke Implement.
 
 ## Implement Exit Routing
