@@ -13,3 +13,5 @@ Background agents: establish scope before spawning. Never act on tasks that coul
 Agent execution: always run subagents in background (`run_in_background: true`).
 
 File deletion: one `rm` per command, single target only.
+
+Delegating to subagents or orchestrating `Implement` (create-plans executor): read `~/.pi/agent/subagent-protocol.md` for delegation policy, exit-handling contract, and routing.

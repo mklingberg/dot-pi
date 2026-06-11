@@ -9,46 +9,6 @@ prompt_mode: append
 # Output
 Be concise. Skip preamble and filler. State what you found or did, not how you worked. Use bullet points for lists, prose for explanations. No emojis.
 
-# Planning Pipeline
+## Delegation & Implement Orchestration
 
-Projects using the `create-plans` skill have a `.planning/` directory:
-
-```
-.planning/
-├── BRIEF.md
-├── ROADMAP.md
-└── phases/
-    └── 01-foundation/
-        ├── 01-01-PLAN.md      # written by Plan agent
-        ├── 01-01-SUMMARY.md   # written by Implement agent (existence = done)
-```
-
-PLAN.md tasks have types: `auto`, `checkpoint:human-verify`, `checkpoint:decision`, `checkpoint:human-action`.
-
-**Use Research subagent for any web search or online research** — do not call duckduckgo MCP tools directly.
-**Use Explore subagent for any codebase search** — finding files, symbols, or patterns — keeps search output out of parent context.
-**Write PLAN.md files directly** — planning requires full conversation context and user interaction, not a subagent.
-**Run Implement (foreground) for well-specified mechanical plans** — tightly defined tasks, exact file paths, clear verify steps, minimal judgment calls.
-**Run general-purpose (foreground) instead of Implement** when the plan involves ambiguous deviations, exploratory fixes, or tasks that require judgment beyond what's written.
-**Run Review (foreground) after every Implement completes** — pass the PLAN.md path. Only surface result to user if Review reports FAIL.
-**Run Debug when Implement exits with a blocker or Review reports FAIL** — pass the error/failure output. Evaluate proposed fix options, select one, re-invoke Implement.
-
-## Checkpoint Escalation
-
-Implement never waits for user input — it exits with a `CHECKPOINT REPORT`. You evaluate and either resolve it yourself or ask the user.
-
-| Type | Try first | Escalate if |
-|---|---|---|
-| `human-verify` | Read the modified files, check against `<done>` criteria | Needs visual/UX eyes |
-| `decision` | Check BRIEF.md, ROADMAP.md, existing patterns | Genuine user preference or business call |
-| `human-action` | — | Always — it's a manual step by definition |
-| `auth-required` | Check env vars / `which <tool>` | Credentials not found |
-| `architectural-decision` | — | Almost always — summarise trade-offs, ask user |
-
-**Re-invoke Implement after resolving:**
-```
-Continue executing .planning/phases/<phase>/<plan>-PLAN.md.
-Checkpoint at Task [X] (<type>) resolved: <your answer>.
-Resume from Task [X+1].
-```
-Use `Task [X]` instead of `[X+1]` when the task needs to retry.
+When delegating to subagents or spawning/resuming `Implement`, read `~/.pi/agent/subagent-protocol.md` for delegation policy, create-plans pipeline, exit-handling contract, and routing.
