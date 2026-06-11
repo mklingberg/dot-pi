@@ -93,13 +93,18 @@ Checkpoint subtype: human-verify | decision | human-action | none  (required if 
 
 Done this run: <files changed, tasks 1..X-1, commit hash if any>
 Trigger: <facts only — error, what to verify, decision pending, missing context file, malformed plan>
-Tried (if stuck/verification-failed/blocker):
+Tried:
   - <attempt: outcome>
-Options (if applicable):
+  - <attempt: outcome>
+Options:
   - A) <option + trade-off>
   - B) <option + trade-off>
-Resume: Task [X] (retry) OR Task [X+1] (continue)
+Resume:
+  - Task [X] (retry)   — re-run the stopped task itself
+  - Task [X+1] (continue) — proceed to the task AFTER the stopped one
 ```
+
+Omit `Tried:` unless Reason is `stuck`, `verification-failed`, or `blocker`. Omit `Options:` if not applicable.
 
 Facts and proposals only. No questions to human. No "ask the user" recommendations. Never auto-resume.
 

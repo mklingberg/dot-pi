@@ -71,7 +71,7 @@ Sequential by default. Parallel Implement runs only when plans touch **disjoint 
 ```
 Continue executing .planning/phases/<phase>/<plan>-PLAN.md.
 Exit at Task [X] (<reason>) resolved: <decision / action / human's answer>.
-Restart at: Task [X] (retry) OR Task [X+1] (continue).
+Restart at: Task [X] (retry the stopped task) OR Task [X+1] (continue past it).
 ```
 
 The `Restart at` instruction overrides Implement's auto-skip of evidenced-complete tasks. Implement is stateless across invocations — it re-reads PLAN.md and @context every time.
