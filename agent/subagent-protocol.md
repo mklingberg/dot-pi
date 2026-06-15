@@ -90,7 +90,13 @@ Don't auto-chain. After Implement completes + Review passes, report to user with
 
 ## Parallelism
 
-Sequential by default. Parallel Implement runs only when plans touch **disjoint files** (verify via plan `<files>` lists). Same-phase plans usually conflict — assume sequential unless proven otherwise. Overlapping files → spawn each Implement with `isolation: worktree` and merge branches after. Batch Review calls (pass multiple PLAN.md paths) when parallel Implements complete together.
+Gate on **dependency**, not files:
+- **Independent plans** (neither reads the other's output) → spawn in parallel, each with `isolation: worktree`. Cap waves at 4. After all complete, merge `pi-agent-*` branches sequentially; resolve conflicts at merge.
+- **Dependent plans** (B reads A's code) → sequential, no worktree.
+
+Worktree failures are loud (extension returns error, no silent fallback) — safe to default-on for independent waves.
+
+Batch Review: one call with all PLAN.md paths after the wave completes.
 
 ## Re-invocation
 
