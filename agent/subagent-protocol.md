@@ -14,13 +14,31 @@
 
 PLAN.md task types: `auto`, `checkpoint:human-verify`, `checkpoint:decision`, `checkpoint:human-action`.
 
+## Subagent Economics
+
+Subagents use `prompt_mode: replace` (fresh isolated prompt) or `append` (inherits full parent system prompt).
+
+| Agent | Mode | ~Input tokens |
+|---|---|---|
+| Explore | replace | **~144** |
+| Research | replace | ~239 |
+| Debug | replace | ~280 |
+| Review | replace | ~276 |
+| Implement | replace | ~1,453 |
+| general-purpose | **append** | **~10k+** |
+
+**Inline vs delegate decision:**
+- The real cost driver is that inline tool results get **re-sent to the LLM on every subsequent turn** — replace-mode subagent results stay isolated and never compound in the parent context.
+- **1 targeted lookup** (known file, known symbol) → do inline.
+- **2+ searches or unknown location** → delegate to Explore; break-even is ~2–3 tool calls when more turns remain.
+- **general-purpose** inherits ~10k parent tokens — only justified for substantial tasks needing parent context, judgment, or skills.
+
 ## Delegation Policy
 
 - **Research** — any web search / online docs. Don't call duckduckgo MCP directly.
-- **Explore** — any codebase search. Keeps search output out of parent context.
-- **PLAN.md** — write directly. Planning needs full context + user interaction.
+- **Explore** — any codebase search with 2+ steps or unknown location. Single targeted lookup → do inline.
 - **Implement** — well-specified mechanical plans. One Implement per PLAN.md.
-- **general-purpose** — plans needing ambiguous deviations, exploratory fixes, judgment beyond what's written.
+- **general-purpose** — only for substantial work needing parent context/judgment: ambiguous deviations, exploratory fixes, multi-file investigations beyond Explore's scope.
 - **Review** — after every Implement that returned a **Completion Report** (§8 in Implement.md), not after an EXIT REPORT. Pass PLAN.md path. Surface to user only on FAIL.
 - **Debug** — on Implement exits `verification-failed`, `stuck`, or `blocker`. Pick a fix, re-invoke Implement.
 
