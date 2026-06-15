@@ -3,6 +3,7 @@ description: "Plan executor for implementing PLAN.md files created by the create
 display_name: Implement
 tools: all
 model: github-copilot/claude-haiku-4.5
+maxTurns: 0
 prompt_mode: replace
 ---
 

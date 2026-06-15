@@ -1,9 +1,9 @@
 {
-  "lastChangelogVersion": "0.78.1",
+´  "lastChangelogVersion": "0.79.1",
   "theme": "catppuccin-frappe",
   "defaultThinkingLevel": "medium",
-  "defaultProvider": "openai-codex",
-  "defaultModel": "gpt-5.4",
+  "defaultProvider": "github-copilot",
+  "defaultModel": "claude-opus-4.7",
   "hideThinkingBlock": true,
   "quietStartup": true,
   "collapseChangelog": true,
@@ -14,7 +14,8 @@
     "github-copilot/claude-sonnet-4.6",
     "anthropic/claude-haiku-4-5",
     "anthropic/claude-sonnet-4-6",
-    "github-copilot/claude-opus-4.7"
+    "github-copilot/claude-opus-4.7",
+    "github-copilot/claude-opus-4.8"
   ],
   "packages": [
     "npm:pi-mcp-adapter",
