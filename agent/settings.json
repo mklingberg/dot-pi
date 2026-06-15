@@ -12,10 +12,10 @@
     "openai-codex/gpt-5.4-mini",
     "openai-codex/gpt-5.4",
     "github-copilot/claude-sonnet-4.6",
-    "anthropic/claude-haiku-4-5",
-    "anthropic/claude-sonnet-4-6",
     "github-copilot/claude-opus-4.7",
-    "github-copilot/claude-opus-4.8"
+    "github-copilot/claude-opus-4.8",
+    "openai-codex/gpt-5.5",
+    "github-copilot/claude-fable-5"
   ],
   "packages": [
     "npm:pi-mcp-adapter",
@@ -23,7 +23,8 @@
     "npm:pi-zentui",
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@tmustier/pi-usage-extension",
-    "npm:@tintinweb/pi-subagents"
+    "npm:@tintinweb/pi-subagents",
+    "npm:pi-notify"
   ],
   "enableSkillCommands": true
 }
