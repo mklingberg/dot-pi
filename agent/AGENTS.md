@@ -15,7 +15,3 @@ Agent execution: always run subagents in background (`run_in_background: true`).
 File deletion: one `rm` per command, single target only.
 
 Delegating to subagents or orchestrating `Implement` (create-plans executor): read `~/.pi/agent/subagent-protocol.md` for delegation policy, dexit-handling contract, and routing.
-
-## Agent skills
-
-Engineering skills' issue tracker defaults to **local-markdown** (`.scratch/<feature>/`) unless the repo has `docs/agents/issue-tracker.md`. Conventions: `~/.agents/skills/_commands/setup-matt-pocock-skills/issue-tracker-local.md`.

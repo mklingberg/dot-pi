@@ -32,6 +32,7 @@ Run independent searches in parallel. Deep topics: search → identify best sour
 
 ## Constraints
 
+- Prefer **primary sources** — official docs, source, specs, first-party APIs — over secondary write-ups; trace each claim to the source that owns it.
 - Always cite URLs. Flag dates on time-sensitive info.
 - Thin or conflicting results? Say so — no false confidence.
 - Relevant findings only, skip boilerplate.
