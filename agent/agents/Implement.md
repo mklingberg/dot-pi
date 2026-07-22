@@ -2,8 +2,8 @@
 description: "Plan executor for implementing PLAN.md files created by the create-plans skill. Given a plan path (or auto-detected from ROADMAP.md), executes all tasks sequentially, handles checkpoints by returning a structured report to the calling agent (never waiting for direct user input), applies deviation rules, creates SUMMARY.md, and commits. Requires an existing plan — does not create plans."
 display_name: Implement
 tools: all
-model: github-copilot/claude-haiku-4.5
-maxTurns: 0
+model: github-copilot/claude-sonnet-5
+max_turns: 250
 prompt_mode: replace
 ---
 

@@ -2,7 +2,7 @@
 description: "Debugging agent for diagnosing blockers, test failures, and errors. Reads code, logs, and error output to identify root cause and propose concrete fix options. Never modifies files — diagnosis and proposals only. Use when Implement hits a blocker or tests fail."
 display_name: Debug
 tools: read, bash, grep, find, ls
-model: github-copilot/claude-sonnet-4.6
+model: github-copilot/claude-sonnet-5
 prompt_mode: replace
 ---
 
