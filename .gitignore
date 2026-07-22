@@ -7,4 +7,5 @@ agent/auth.json
 agent/mcp.json
 agent/mcp-cache.json
 agent/mcp-npx-cache.json
+agent/models-store.json
 context-mode/
