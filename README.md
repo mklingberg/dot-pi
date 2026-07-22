@@ -22,7 +22,7 @@ General
 |---|---|---|
 | **General** | Sonnet 4.6 | Keeps the workflow moving — orchestration, delegation, checkpoint resolution |
 | **Plan** | Sonnet 4.6 | Turns scoped work into executable `PLAN.md` files |
-| **Implement** | Haiku 4.5 | Executes the plan, stages changes, writes durable summaries |
+| **Implement** | Sonnet | Executes the plan, stages changes, writes durable summaries |
 | **Review** | Haiku 4.5 | Verifies success criteria independently against real output |
 | **Debug** | Sonnet 4.6 | Diagnoses blockers and failures, then hands back a concrete fix path |
 | **Explore** | Haiku 4.5 | Fast read-only codebase search for files, symbols, and patterns |
@@ -120,27 +120,31 @@ The net effect: cleaner features, smaller review surfaces, durable project memor
 
 The repo layout mirrors the workflow: agent behavior at the core, extensions for guardrails and ergonomics, and top-level safety rules protecting the shell.
 
+> **Shared source:** the portable agent defs, the orchestration protocol, and global instructions are no longer stored in this repo — they are **symlinks into the shared [`~/.agents`](https://github.com/mklingberg/dot-agents) workspace**, so the same setup runs in pi, Claude Code, and Copilot CLI. Only `general-purpose` (pi's parent-twin orchestrator) stays native here, since no other harness has an equivalent. Edit sources in `~/.agents` and run `bash ~/.agents/bin/sync.sh` to re-propagate.
+
 ```
 ~/.pi/
 ├── agent/
-│   ├── agents/                   # Custom agent overrides
-│   │   ├── Explore.md            # Read-only codebase search (Haiku)
-│   │   ├── Implement.md          # Plan executor (Haiku)
-│   │   ├── Plan.md               # PLAN.md writer (Sonnet)
-│   │   ├── Research.md           # Web research (Haiku)
-│   │   ├── Review.md             # Post-implement verifier (Haiku)
-│   │   ├── Debug.md              # Failure diagnosis, proposes fixes (Sonnet)
-│   │   └── general-purpose.md   # Orchestrator (Sonnet)
+│   ├── agents/                   # Portable defs → symlinked to ~/.agents/agents
+│   │   ├── Explore.md            # → ~/.agents  read-only codebase search (Haiku)
+│   │   ├── Research.md           # → ~/.agents  web research (Haiku)
+│   │   ├── Debug.md              # → ~/.agents  failure diagnosis, proposes fixes (Sonnet)
+│   │   ├── Review.md             # → ~/.agents  post-implement verifier (Haiku)
+│   │   ├── Implement.md          # → ~/.agents  plan executor (Sonnet)
+│   │   └── general-purpose.md   # Native orchestrator (Sonnet) — not shared
 │   ├── extensions/
 │   │   ├── damage-control.ts     # Safety rules enforcement extension
 │   │   ├── rtk.ts                # Bash rewrite via RTK for token savings
 │   │   └── hide-mcp-status.ts    # Hides noisy zero-state UI status
 │   ├── themes/                   # Custom themes (catppuccin variants + dracula)
-│   ├── AGENTS.md                 # Global agent behaviour rules
+│   ├── AGENTS.md                 # → ~/.agents/AGENTS.md  global agent rules (shared)
+│   ├── subagent-protocol.md      # → ~/.agents/subagent-protocol.md  hybrid orchestration
 │   ├── settings.json             # Main pi settings
 │   └── zentui.json               # Zentui statusline config
 └── damage-control-rules.yaml     # Bash command safety rules
 ```
+
+`Plan` is a built-in from `@tintinweb/pi-subagents` (no override file). The hybrid `subagent-protocol.md` carries an agnostic core plus per-harness adapters, so the delegation/EXIT-routing logic reads the same in every tool.
 
 ## Packages
 
