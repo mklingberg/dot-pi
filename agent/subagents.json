@@ -1,7 +1,7 @@
 {
   "maxConcurrent": 4,
-  "defaultMaxTurns": 25,
-  "graceTurns": 3,
+  "defaultMaxTurns": 100,
+  "graceTurns": 10,
   "defaultJoinMode": "smart",
   "schedulingEnabled": false,
   "scopeModels": true,
