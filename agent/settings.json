@@ -1,9 +1,9 @@
 {
-  "lastChangelogVersion": "0.79.4",
+  "lastChangelogVersion": "0.81.0",
   "theme": "catppuccin-frappe",
   "defaultThinkingLevel": "medium",
   "defaultProvider": "github-copilot",
-  "defaultModel": "claude-sonnet-4.6",
+  "defaultModel": "claude-opus-4.8",
   "hideThinkingBlock": true,
   "quietStartup": true,
   "collapseChangelog": true,
@@ -15,13 +15,12 @@
     "github-copilot/claude-opus-4.7",
     "github-copilot/claude-opus-4.8",
     "openai-codex/gpt-5.5",
-    "github-copilot/claude-fable-5"
+    "github-copilot/claude-sonnet-5"
   ],
   "packages": [
     "npm:pi-mcp-adapter",
     "npm:pi-context",
     "npm:pi-zentui",
-    "npm:@juicesharp/rpiv-ask-user-question",
     "npm:@tmustier/pi-usage-extension",
     "npm:@tintinweb/pi-subagents",
     "npm:pi-notify"
