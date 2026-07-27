@@ -1,7 +1,8 @@
 /**
  * hide-mcp-status.ts
- * - Hides "MCP: 0/5 servers" from the status bar when no servers are connected.
- *   The status still appears once servers actually connect.
+ * - Hides the MCP counts entry ("N servers enabled") from the status bar.
+ *   It only carries informational counts, never an actionable state; auth
+ *   prompts (mcp-auth key) and failures (notify) remain visible.
  * - Hides "$0.000" from the pi-zentui footer when session cost is zero.
  *   The cost segment is removed AND the visual space is redistributed into the
  *   middle gap so the right section stays properly right-aligned.
@@ -85,7 +86,11 @@ export default function (pi: ExtensionAPI) {
     // --- Hide MCP: 0/N in status bar ---
     const originalSetStatus = ctx.ui.setStatus.bind(ctx.ui);
     ctx.ui.setStatus = (key: string, value: string | undefined) => {
-      if (key === "mcp" && typeof value === "string" && value.includes("MCP: 0/")) {
+      // The "mcp" key only ever carries informational counts (N servers
+      // enabled / connected / disabled) — never an actionable state. Auth
+      // prompts use the separate "mcp-auth" key and failures use notify(),
+      // both of which stay visible. So suppress the "mcp" key entirely.
+      if (key === "mcp") {
         return originalSetStatus(key, undefined);
       }
       return originalSetStatus(key, value);
