@@ -289,10 +289,23 @@ export default function (pi: ExtensionAPI) {
 				// word boundaries (plus output redirection). Substring matching here
 				// caused false positives: e.g. a path like /Library/.../Terminal/...
 				// contains "rm", so a plain `ls` was flagged as write-risky.
-				const hasWriteVerb = /(?:^|[\s;|&(])(?:rm|mv|cp|ln|sed|tee|dd|truncate|chmod|chown|install|rsync|touch|mkdir)\b/.test(command) || command.includes(">");
-				const hasDeleteVerb = /(?:^|[\s;|&(])(?:rm|mv|rmdir|unlink|shred)\b/.test(command);
+				// A file-writing redirect is `>`/`>>` targeting a file. Exclude fd
+				// duplications like `2>&1` / `>&2`, which don't write to a path.
+				const hasFileRedirect = /(?:^|[\s\d])>>?(?!&)/.test(command);
+				// Verbs only count in command position (start, or after a shell
+				// separator), optionally sudo-prefixed — so `grep -r rm foo` (rm as an
+				// argument) is not mistaken for the rm command.
+				const hasWriteVerb = /(?:^|[;&|(]|\n)\s*(?:sudo\s+)?(?:rm|mv|cp|ln|sed|tee|dd|truncate|chmod|chown|install|rsync|touch|mkdir)\b/.test(command) || hasFileRedirect;
+				const hasDeleteVerb = /(?:^|[;&|(]|\n)\s*(?:sudo\s+)?(?:rm|mv|rmdir|unlink|shred)\b/.test(command);
+				// xargs invokes its verb after option parsing, so the verb isn't in
+				// shell command position. If xargs is present, treat any write/delete
+				// verb token as command-position (conservative: favours catching
+				// destructive `find ... | xargs rm`).
+				const usesXargs = /\bxargs\b/.test(command);
+				const writeRisk = hasWriteVerb || (usesXargs && /\b(?:rm|mv|cp|ln|sed|tee|dd|truncate|chmod|chown|install|rsync)\b/.test(command));
+				const deleteRisk = hasDeleteVerb || (usesXargs && /\b(?:rm|mv|rmdir|unlink|shred)\b/.test(command));
 
-				if (!violationReason && hasWriteVerb) {
+				if (!violationReason && writeRisk) {
 					for (const rop of rules.readOnlyPaths) {
 						if (command.includes(rop)) {
 							violationReason = `Bash command may modify read-only path: ${rop}`;
@@ -301,7 +314,7 @@ export default function (pi: ExtensionAPI) {
 					}
 				}
 
-				if (!violationReason && hasDeleteVerb) {
+				if (!violationReason && deleteRisk) {
 					for (const ndp of rules.noDeletePaths) {
 						if (command.includes(ndp)) {
 							violationReason = `Bash command attempts to delete/move protected path: ${ndp}`;
