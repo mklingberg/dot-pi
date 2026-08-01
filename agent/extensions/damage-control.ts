@@ -285,20 +285,25 @@ export default function (pi: ExtensionAPI) {
 					}
 				}
 
-				if (!violationReason) {
+				// Detect modification/deletion intent by matching command verbs at
+				// word boundaries (plus output redirection). Substring matching here
+				// caused false positives: e.g. a path like /Library/.../Terminal/...
+				// contains "rm", so a plain `ls` was flagged as write-risky.
+				const hasWriteVerb = /(?:^|[\s;|&(])(?:rm|mv|cp|ln|sed|tee|dd|truncate|chmod|chown|install|rsync|touch|mkdir)\b/.test(command) || command.includes(">");
+				const hasDeleteVerb = /(?:^|[\s;|&(])(?:rm|mv|rmdir|unlink|shred)\b/.test(command);
+
+				if (!violationReason && hasWriteVerb) {
 					for (const rop of rules.readOnlyPaths) {
-						// Heuristic: check if command might modify a read-only path
-						// Redirects, sed -i, rm, mv, tee, truncate, chmod, chown
-						if (command.includes(rop) && (command.includes(">") || command.includes("rm") || command.includes("mv") || command.includes("sed") || command.includes("tee") || command.includes("truncate") || command.includes("chmod") || command.includes("chown"))) {
+						if (command.includes(rop)) {
 							violationReason = `Bash command may modify read-only path: ${rop}`;
 							break;
 						}
 					}
 				}
 
-				if (!violationReason) {
+				if (!violationReason && hasDeleteVerb) {
 					for (const ndp of rules.noDeletePaths) {
-						if (command.includes(ndp) && (command.includes("rm") || command.includes("mv"))) {
+						if (command.includes(ndp)) {
 							violationReason = `Bash command attempts to delete/move protected path: ${ndp}`;
 							break;
 						}
