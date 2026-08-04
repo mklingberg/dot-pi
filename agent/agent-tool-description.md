@@ -22,4 +22,5 @@ Custom agents: .pi/agents/<name>.md (project) or {{agentDir}}/agents/<name>.md (
 
 - Agent result is returned to you, not shown to user — summarize it
 - Trust but verify: check actual file changes before reporting work done
-- For routing policy and Implement orchestration: read subagent-protocol.md
+- Spawn with `run_in_background: true`, then end your turn — the completion notification arrives on its own. Do not wait or poll.
+- Before your first spawn in a session, and whenever an EXIT REPORT arrives: use the `delegate-subagents` skill (role routing, exit handling, roadmap and parallel-wave rules).
