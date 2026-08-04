@@ -10,6 +10,13 @@
  * — an explicit instruction to block, delivered far more recently than any
  * protocol doc. Two hooks:
  *
+ *   0. before_agent_start — delete `wait` from the tool's parameter schema, so
+ *      the model never sees the option at all. getAllTools() hands back the
+ *      live `parameters` object (agent-session.js: `parameters:
+ *      definition.parameters`), and both provider paths forward
+ *      `schema.properties` verbatim, so the removal reaches the model. Cheapest
+ *      outcome available: no blocked call, no reason text, nothing in the
+ *      transcript. Hooks 1 and 2 stay as backstop in case the shape changes.
  *   1. tool_call  — block get_subagent_result(wait: true). The completion
  *      notification arrives on its own; a blocking wait only removes the
  *      user's chance to steer. Blocking (rather than silently rewriting
@@ -65,6 +72,17 @@ export default function (pi: ExtensionAPI) {
   let runningResultsSeen = 0;
   let nudgesRewritten = 0;
   let driftReported = false;
+
+  // Hook 0 — hide the `wait` parameter. Runs before every agent turn rather
+  // than once at session_start: registration order is not guaranteed (the
+  // plugin loads from `packages`, after this directory), and the delete is
+  // idempotent and cheap.
+  pi.on("before_agent_start", () => {
+    const tool = pi.getAllTools().find((t) => t.name === GET_RESULT_TOOL);
+    const properties = (tool?.parameters as { properties?: Record<string, unknown> } | undefined)
+      ?.properties;
+    if (properties && "wait" in properties) delete properties.wait;
+  });
 
   pi.on("tool_call", async (event) => {
     if (event.toolName !== GET_RESULT_TOOL) return { block: false };
