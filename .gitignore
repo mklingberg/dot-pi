@@ -9,3 +9,10 @@ agent/mcp-cache.json
 agent/mcp-npx-cache.json
 agent/models-store.json
 context-mode/
+
+# Orca-managed / runtime / symlinked (skills live in ~/.agents/skills)
+agent/extensions/orca-*.ts
+agent/skills/
+pi-acp/
+/subagents.json
+*.bak-*
