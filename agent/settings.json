@@ -21,7 +21,8 @@
     "npm:pi-zentui",
     "npm:@tmustier/pi-usage-extension",
     "npm:@tintinweb/pi-subagents",
-    "npm:pi-notify"
+    "npm:pi-notify",
+    "npm:@gotgenes/pi-permission-system"
   ],
   "enableSkillCommands": true
 }
