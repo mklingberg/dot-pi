@@ -22,7 +22,8 @@
     "npm:@tmustier/pi-usage-extension",
     "npm:@tintinweb/pi-subagents",
     "npm:pi-notify",
-    "npm:@gotgenes/pi-permission-system"
+    "npm:@gotgenes/pi-permission-system",
+    "./late-extensions/rtk.ts"
   ],
   "enableSkillCommands": true
 }
