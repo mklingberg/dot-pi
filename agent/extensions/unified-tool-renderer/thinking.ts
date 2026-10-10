@@ -72,6 +72,12 @@ interface PatchState {
 	owner: object;
 }
 
+/**
+ * Registers the patch lifecycle. The Container patch is process-global, so only
+ * the instance bound to the interactive UI (ctx.hasUI at session_start) installs
+ * it; in-process subagent instances (pi-subagents, no UI context) never install
+ * and their session_shutdown can never unpatch the UI instance's patch.
+ */
 export function installThinkingDedupe(
 	pi: import("@earendil-works/pi-coding-agent").ExtensionAPI,
 	AssistantMessageComponent: abstract new (...args: any[]) => any,
@@ -79,43 +85,52 @@ export function installThinkingDedupe(
 ): void {
 	const proto: any = Object.getPrototypeOf((AssistantMessageComponent as any).prototype);
 	if (!proto || typeof proto.render !== "function") return;
-
-	// Reload-safe: remove a previous install before patching.
-	const previous: PatchState | undefined = proto[PATCH_KEY];
-	if (previous && proto.render === previous.patched) proto.render = previous.original;
-	const original: (width: number) => string[] = proto.render;
 	const owner = {};
+	let installed = false;
 
-	const patched = function (this: any, width: number): string[] {
-		let enabled = false;
-		try {
-			enabled = isEnabled() && Array.isArray(this.children) && this.children.some((c: any) => c instanceof AssistantMessageComponent);
-		} catch {}
-		if (!enabled) return original.call(this, width);
-		try {
-			const children: any[] = this.children;
-			const rendered = children.map((child) => {
-				const lines: string[] = child.render(width);
-				const label = child instanceof AssistantMessageComponent ? String(child.hiddenThinkingLabel ?? "Thinking...") : undefined;
-				return { lines, label };
-			});
-			const deduped = dedupeThinkingRuns(rendered);
-			const out: string[] = [];
-			const mouseChildren = deduped.map((lines, i) => {
-				for (const line of lines) out.push(line);
-				return { component: children[i], height: lines.length };
-			});
-			this.mouseLayout = { width, children: mouseChildren };
-			return out;
-		} catch {
-			return original.call(this, width);
-		}
+	const install = () => {
+		if (installed) return; // no double wrap by the same instance
+		// Reload-safe: remove a previous install (from an earlier module instance) before patching.
+		const previous: PatchState | undefined = proto[PATCH_KEY];
+		if (previous && proto.render === previous.patched) proto.render = previous.original;
+		const original: (width: number) => string[] = proto.render;
+		const patched = function (this: any, width: number): string[] {
+			let enabled = false;
+			try {
+				enabled = isEnabled() && Array.isArray(this.children) && this.children.some((c: any) => c instanceof AssistantMessageComponent);
+			} catch {}
+			if (!enabled) return original.call(this, width);
+			try {
+				const children: any[] = this.children;
+				const rendered = children.map((child) => {
+					const lines: string[] = child.render(width);
+					const label = child instanceof AssistantMessageComponent ? String(child.hiddenThinkingLabel ?? "Thinking...") : undefined;
+					return { lines, label };
+				});
+				const deduped = dedupeThinkingRuns(rendered);
+				const out: string[] = [];
+				const mouseChildren = deduped.map((lines, i) => {
+					for (const line of lines) out.push(line);
+					return { component: children[i], height: lines.length };
+				});
+				this.mouseLayout = { width, children: mouseChildren };
+				return out;
+			} catch {
+				return original.call(this, width);
+			}
+		};
+		proto.render = patched;
+		proto[PATCH_KEY] = { original, patched, owner } satisfies PatchState;
+		installed = true;
 	};
 
-	proto.render = patched;
-	proto[PATCH_KEY] = { original, patched, owner } satisfies PatchState;
+	pi.on("session_start", (_event: unknown, ctx: any) => {
+		if (ctx?.hasUI) install();
+	});
 
 	pi.on("session_shutdown", () => {
+		if (!installed) return;
+		installed = false;
 		const state: PatchState | undefined = proto[PATCH_KEY];
 		if (state && state.owner === owner && proto.render === state.patched) {
 			proto.render = state.original;
