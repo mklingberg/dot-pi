@@ -256,7 +256,17 @@ interface NotificationDetails {
  * <cwd>/.pi/subagents.json (project, overrides global). Read tolerantly at
  * render time; any failure → hidden.
  */
+let showCostCache: { value: boolean; at: number } | undefined;
+
 function readShowCost(): boolean {
+	const now = Date.now();
+	if (showCostCache && now - showCostCache.at < 2000) return showCostCache.value;
+	const value = readShowCostUncached();
+	showCostCache = { value, at: now };
+	return value;
+}
+
+function readShowCostUncached(): boolean {
 	let value = false;
 	const files: string[] = [];
 	try {
