@@ -44,8 +44,7 @@
         "@vanillagreen/pi-tool-renderer": {
           "renderMutationTools": true,
           "toolChrome": "off",
-          "stackToolCalls": true,
-          "stackChildDisplay": "headline"
+          "stackToolCalls": false
         }
       }
     }
