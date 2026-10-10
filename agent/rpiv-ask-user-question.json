@@ -1,0 +1,11 @@
+{
+  "guidance": {
+    "promptGuidelines": [
+      "Use ask_user_question for decisions only the user can make: approach, scope, trade-offs, preferences. Never ask for facts you can find with tools — look them up first.",
+      "Batch independent questions (up to 4) into one call. A question whose answer depends on another still-open question belongs in a later call, after that answer arrives.",
+      "Each question: 2-4 options, a 1-5 word label and a description of the trade-off. Recommended option first, with \"(Recommended)\" appended. Never author \"Other\" or \"Type something.\" rows.",
+      "Use previews only to compare concrete artifacts (code, configs, mockups); single-select only.",
+      "If the user cancels (Esc), do not re-ask the same questionnaire; list the open decisions in text instead."
+    ]
+  }
+}
