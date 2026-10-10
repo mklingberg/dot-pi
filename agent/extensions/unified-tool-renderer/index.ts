@@ -19,10 +19,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { AssistantMessageComponent, getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, type SettingItem, SettingsList, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { type Component, Container, type SettingItem, SettingsList, type TuiMouseEvent, type TuiMouseEventResult, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import { installThinkingDedupe } from "./thinking.ts";
-import { createGroupTracker, DEFAULT_GROUP_EXCLUDE, leadingNoticeKey, summarize, type ToolGroup } from "./group.ts";
+import { createGroupTracker, DEFAULT_GROUP_EXCLUDE, leadingNoticeKey, summarize, syncExpandEdge, type ToolGroup } from "./group.ts";
 
 const BULLET = "● ";
 const TREE_LAST = "  └─ ";
@@ -345,14 +345,26 @@ class NotificationView implements Component {
 		private readonly theme: Theme,
 		private readonly key: string | undefined,
 		private readonly tracker: GroupTracker,
+		private readonly st: GroupState,
 	) {}
 	invalidate(): void {}
+	/** Left-click: toggle the whole group, or (standalone) this notification's own view. */
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type !== "click" || event.button !== "left") return undefined;
+		const group = this.key && settings.grouping ? this.tracker.lookupNotification(this.key) : undefined;
+		if (group) {
+			toggleGroup(this.st, group);
+		} else if (this.key) {
+			if (!this.st.flipped.delete(this.key)) this.st.flipped.add(this.key);
+		} else return undefined;
+		return { handled: true };
+	}
 	render(width: number): string[] {
 		const w = Math.max(1, width);
 		// Read tracker state at render time: the group may form after this component was built.
 		const group = this.key && settings.grouping ? this.tracker.lookupNotification(this.key) : undefined;
-		if (group && !this.expanded && !group.expanded) return [];
-		const expanded = this.expanded || Boolean(group?.expanded);
+		if (group && !group.expanded) return [];
+		const expanded = group ? group.expanded : this.expanded !== Boolean(this.key && this.st.flipped.has(this.key));
 		const showCost = readShowCost();
 		const all = [this.details, ...(this.details.others ?? [])];
 		const out: string[] = [];
@@ -426,11 +438,15 @@ interface GroupState {
 	tracker: GroupTracker;
 	invalidators: Map<string, () => void>;
 	innerRows: Map<string, { call?: Component; result?: Component }>;
+	/** Last seen ctx.expanded per tool row (edge detection for group expand). */
+	seenExpanded: Map<string, boolean>;
+	/** Standalone notifications whose expand state was flipped by a click (XOR with Pi's global state). */
+	flipped: Set<string>;
 }
 const MAX_INVALIDATORS = 512;
 
 function createGroupState(): GroupState {
-	return { tracker: createGroupTracker({ exclude: settings.groupExclude }), invalidators: new Map(), innerRows: new Map() };
+	return { tracker: createGroupTracker({ exclude: settings.groupExclude }), invalidators: new Map(), innerRows: new Map(), seenExpanded: new Map(), flipped: new Set() };
 }
 
 function rememberInvalidator(st: GroupState, id: string, fn: unknown): void {
@@ -454,6 +470,32 @@ function notify(st: GroupState, id: string | undefined): void {
 
 function notifyGroup(st: GroupState, group: ToolGroup, exceptId?: string): void {
 	for (const item of group.items) if (item.id !== exceptId) notify(st, item.id);
+}
+
+function toggleGroup(st: GroupState, group: ToolGroup): void {
+	group.expanded = !group.expanded;
+	notifyGroup(st, group);
+}
+
+/**
+ * Left-click anywhere on a group member toggles the whole group. Pi wraps each
+ * row component in a MouseRegion that asks the child first, so handling it here
+ * pre-empts Pi's per-row toggle: a row's own `expanded` then only changes via
+ * global ctrl+o, which keeps group.expanded and the rows from drifting apart.
+ */
+class GroupClick implements Component {
+	constructor(private readonly inner: Component, private readonly onToggle: () => void) {}
+	invalidate(): void {
+		this.inner.invalidate();
+	}
+	render(width: number): string[] {
+		return this.inner.render(width);
+	}
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+		if (event.type !== "click" || event.button !== "left") return undefined;
+		this.onToggle();
+		return { handled: true };
+	}
 }
 
 /** Adds the outputPad horizontal indent that Pi's default shell would have drawn. */
@@ -487,11 +529,10 @@ function groupedRenderers(st: GroupState, name: string, inner: ToolRenderers): T
 		rememberInvalidator(st, id, ctx?.invalidate);
 		const found = st.tracker.lookup(id);
 		if (!found) return undefined;
-		if (found.isAnchor && Boolean(ctx?.expanded) !== found.group.expanded) {
-			found.group.expanded = Boolean(ctx?.expanded);
-			notifyGroup(st, found.group, id);
-		}
-		return { ...found, show: Boolean(ctx?.expanded) || found.group.expanded };
+		// Edge-triggered: a row's own click / global ctrl+o drives group.expanded;
+		// group.expanded is then the single source of truth for every member.
+		if (syncExpandEdge(found.group, st.seenExpanded, id, Boolean(ctx?.expanded))) notifyGroup(st, found.group, id);
+		return { ...found, show: found.group.expanded };
 	};
 
 	// Pi hands back whatever we returned as context.lastComponent; inner
@@ -525,10 +566,11 @@ function groupedRenderers(st: GroupState, name: string, inner: ToolRenderers): T
 			try {
 				const g = sync(context);
 				if (!g) return wrapBase(run(), context);
-				if (!g.show) return g.isAnchor ? new Lines(summaryLine(g.group, theme, true)) : empty();
+				const click = (c: Component): Component => new GroupClick(c, () => toggleGroup(st, g.group));
+				if (!g.show) return g.isAnchor ? click(new Lines(summaryLine(g.group, theme, true))) : empty();
 				const base = wrapBase(run(), context);
-				if (!g.isAnchor || leadingNoticeKey(g.group) !== undefined) return base; // header lives on the leading notification
-				return new Stack([new Lines(summaryLine(g.group, theme, false)), base]);
+				if (!g.isAnchor || leadingNoticeKey(g.group) !== undefined) return click(base); // header lives on the leading notification
+				return click(new Stack([new Lines(summaryLine(g.group, theme, false)), base]));
 			} catch {
 				return wrapBase((inner.renderCall ?? unifiedCall(name))(args, theme, { ...context, lastComponent: undefined } as any), context);
 			}
@@ -540,7 +582,7 @@ function groupedRenderers(st: GroupState, name: string, inner: ToolRenderers): T
 				const g = sync(context);
 				if (!g) return wrapBase(run(), context);
 				if (!g.show) return empty();
-				return wrapBase(run(), context);
+				return new GroupClick(wrapBase(run(), context), () => toggleGroup(st, g.group));
 			} catch {
 				return wrapBase((inner.renderResult ?? unifiedResult(name))(result, options, theme, { ...context, lastComponent: undefined } as any), context);
 			}
@@ -662,6 +704,8 @@ export default function (pi: ExtensionAPI): void {
 		st.tracker.reset();
 		st.invalidators.clear();
 		st.innerRows.clear();
+		st.seenExpanded.clear();
+		st.flipped.clear();
 		announced.clear();
 	};
 	const replay = (_event: unknown, ctx: any) => {
@@ -701,7 +745,7 @@ export default function (pi: ExtensionAPI): void {
 	if (settings.notificationTakeover) {
 		pi.registerMessageRenderer<NotificationDetails>("subagent-notification", (message, { expanded }, theme) => {
 			if (!message.details) return undefined;
-			return new NotificationView(message.details, expanded, theme, noticeKey(message), st.tracker);
+			return new NotificationView(message.details, expanded, theme, noticeKey(message), st.tracker, st);
 		});
 	}
 

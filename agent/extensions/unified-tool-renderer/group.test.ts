@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_GROUP_EXCLUDE, createGroupTracker, leadingNoticeKey, summarize, type GroupItem } from "./group.ts";
+import { DEFAULT_GROUP_EXCLUDE, createGroupTracker, leadingNoticeKey, summarize, syncExpandEdge, type GroupItem } from "./group.ts";
 
 const item = (toolName: string, status: GroupItem["status"] = "done", args: any = {}): GroupItem => ({
 	id: Math.random().toString(36),
@@ -327,4 +327,27 @@ test("leadingNoticeKey: only notices attached before the first tool row lead", (
 	t2.onAssistantContent([call("a")], "done");
 	t2.onNotification("n1");
 	assert.equal(leadingNoticeKey(t2.lookup("a")!.group), undefined);
+});
+
+test("syncExpandEdge: follows row changes only, outside flips stick", () => {
+	const g = { items: [], notices: [], expanded: false };
+	const seen = new Map<string, boolean>();
+	assert.equal(syncExpandEdge(g, seen, "a", false), false); // first sight collapsed
+	assert.equal(syncExpandEdge(g, seen, "a", true), true); // own click / ctrl+o
+	assert.equal(g.expanded, true);
+	g.expanded = false; // notification click
+	assert.equal(syncExpandEdge(g, seen, "a", true), false); // unchanged row must not undo it
+	assert.equal(g.expanded, false);
+	assert.equal(syncExpandEdge(g, seen, "a", false), false); // already collapsed
+	assert.equal(syncExpandEdge(g, seen, "a", true), true);
+	assert.equal(g.expanded, true);
+});
+
+test("syncExpandEdge: first sight expanded (global ctrl+o) expands; bounded", () => {
+	const g = { items: [], notices: [], expanded: false };
+	const seen = new Map<string, boolean>();
+	assert.equal(syncExpandEdge(g, seen, "x", true, 2), true);
+	syncExpandEdge(g, seen, "y", false, 2);
+	syncExpandEdge(g, seen, "z", false, 2);
+	assert.equal(seen.size, 2);
 });

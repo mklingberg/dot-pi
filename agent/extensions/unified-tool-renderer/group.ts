@@ -35,6 +35,23 @@ export function leadingNoticeKey(group: ToolGroup): string | undefined {
 	return group.notices.find((n) => n.at <= 0)?.key;
 }
 
+/**
+ * Edge-triggered group expand sync. `seen` remembers each tool row's last
+ * ctx.expanded; only when a row's value CHANGES (its own click, or global
+ * ctrl+o) does group.expanded follow it. Anything else that flips
+ * group.expanded (a notification click) therefore sticks. Unseen rows count
+ * as previously collapsed. Returns true when group.expanded changed.
+ */
+export function syncExpandEdge(group: ToolGroup, seen: Map<string, boolean>, id: string, expanded: boolean, max = 512): boolean {
+	const prev = seen.get(id) ?? false;
+	seen.delete(id);
+	seen.set(id, expanded);
+	while (seen.size > max) seen.delete(seen.keys().next().value!);
+	if (expanded === prev || group.expanded === expanded) return false;
+	group.expanded = expanded;
+	return true;
+}
+
 export interface GroupTrackerOptions {
 	exclude?: string[];
 	maxItems?: number;
