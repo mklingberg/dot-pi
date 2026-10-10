@@ -98,6 +98,7 @@
     "external_directory": "allow",
     "bash": {
       "*": "allow",
+      "bash ~/.agents/bin/sync.sh": "allow",
       "rm *": "ask",
       "sudo rm *": {
         "action": "deny",
