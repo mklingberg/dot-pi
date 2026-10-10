@@ -18,3 +18,8 @@ pi-acp/
 /subagents.json
 *.bak-*
 agent/extensions/pi-permission-system/logs/
+
+# Created by ~/.agents/bin/sync.sh (symlinks into ~/.agents); source of truth lives there
+agent/AGENTS.md
+agent/agents/*
+!agent/agents/general-purpose.md
