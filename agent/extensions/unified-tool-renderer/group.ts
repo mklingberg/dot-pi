@@ -4,7 +4,7 @@
  * No Pi / pi-tui imports — keep render code elsewhere.
  */
 
-export const DEFAULT_GROUP_EXCLUDE: string[] = ["edit", "write", "ask_user_question"];
+export const DEFAULT_GROUP_EXCLUDE: string[] = ["edit", "write"];
 
 export type ItemStatus = "running" | "done" | "error";
 
@@ -263,7 +263,7 @@ export function createGroupTracker(options: GroupTrackerOptions = {}): GroupTrac
 	};
 }
 
-type Kind = "finished" | "read" | "search" | "list" | "bash" | "batch" | "mcp" | "agent" | "workflow" | "agentResult" | "steer" | "other";
+type Kind = "finished" | "read" | "search" | "list" | "bash" | "batch" | "mcp" | "agent" | "workflow" | "agentResult" | "steer" | "ask" | "other";
 
 const PHRASES: Record<Kind, { past: [string, string]; ing: [string, string] }> = {
 	finished: { past: ["", "agent"], ing: ["", "agent"] },
@@ -277,6 +277,7 @@ const PHRASES: Record<Kind, { past: [string, string]; ing: [string, string] }> =
 	workflow: { past: ["ran", "workflow"], ing: ["running", "workflow"] },
 	agentResult: { past: ["checked", "agent"], ing: ["checking", "agent"] },
 	steer: { past: ["steered", "agent"], ing: ["steering", "agent"] },
+	ask: { past: ["asked", "question"], ing: ["asking", "question"] },
 	other: { past: ["used", "tool"], ing: ["using", "tool"] },
 };
 
@@ -292,6 +293,7 @@ function kindOf(name: string): Kind {
 		case "SubagentWorkflow": return "workflow";
 		case "get_subagent_result": return "agentResult";
 		case "steer_subagent": return "steer";
+		case "ask_user_question": return "ask";
 	}
 	const lower = name.toLowerCase();
 	if (lower.includes("mcp") || name.includes("__")) return "mcp";
@@ -307,7 +309,8 @@ export function summarize(items: GroupItem[], notices: { at: number }[] = []): s
 		const item = items[p];
 		if (!item) continue;
 		const kind = kindOf(item.toolName);
-		add(kind, kind === "batch" && Array.isArray(item.args?.calls) ? item.args.calls.length : 1);
+		const inner = kind === "batch" ? item.args?.calls : kind === "ask" ? item.args?.questions : undefined;
+		add(kind, Array.isArray(inner) ? inner.length : 1);
 	}
 	const running = items.some((i) => i.status === "running");
 	const failed = items.filter((i) => i.status === "error").length;

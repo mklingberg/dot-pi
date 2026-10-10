@@ -10,7 +10,8 @@ const item = (toolName: string, status: GroupItem["status"] = "done", args: any 
 });
 
 test("default exclude list", () => {
-	assert.deepEqual(DEFAULT_GROUP_EXCLUDE, ["edit", "write", "ask_user_question"]);
+	assert.deepEqual(DEFAULT_GROUP_EXCLUDE, ["edit", "write"]);
+	assert.ok(!DEFAULT_GROUP_EXCLUDE.includes("ask_user_question"));
 	assert.ok(!DEFAULT_GROUP_EXCLUDE.includes("Agent"));
 	assert.ok(!DEFAULT_GROUP_EXCLUDE.includes("SubagentWorkflow"));
 });
@@ -382,4 +383,18 @@ test("syncExpandEdge clears the group's flips on a ctrl+o edge of a known row on
 	assert.deepEqual([...f], ["zzz"]);
 	clearGroupFlips(g, other);
 	assert.deepEqual([...other], ["zzz"]);
+});
+
+test("ask_user_question joins a run without closing it", () => {
+	const t = createGroupTracker();
+	t.onAssistantContent([call("a"), call("q", "ask_user_question", { questions: [{}] }), call("b", "grep")]);
+	assert.deepEqual(ids(t, "a"), ["a", "q", "b"]);
+});
+
+test("summarize: ask_user_question counts questions", () => {
+	assert.equal(summarize([item("ask_user_question", "done", { questions: [{}] })]), "Asked 1 question");
+	assert.equal(summarize([item("ask_user_question", "done", { questions: [{}, {}] })]), "Asked 2 questions");
+	assert.equal(summarize([item("ask_user_question")]), "Asked 1 question");
+	assert.equal(summarize([item("ask_user_question", "running", { questions: [{}, {}] })]), "Asking 2 questions…");
+	assert.equal(summarize([item("read"), item("ask_user_question", "done", { questions: [{}, {}] })]), "Read 1 file, asked 2 questions");
 });
