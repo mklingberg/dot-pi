@@ -393,6 +393,7 @@ class NotificationView implements Component {
 const tracker = createGroupTracker({ exclude: settings.groupExclude });
 const invalidators = new Map<string, () => void>();
 const MAX_INVALIDATORS = 512;
+const innerRows = new Map<string, { call?: Component; result?: Component }>();
 
 function rememberInvalidator(id: string, fn: unknown): void {
 	if (typeof fn !== "function") return;
@@ -439,7 +440,9 @@ function groupedRenderers(name: string, inner: ToolRenderers): ToolRenderers {
 	const selfShell = inner.renderShell === "self";
 	const wrapBase = (c: Component, ctx: any): Component => (selfShell ? c : new PadLines(c, Number(ctx?.outputPad ?? 1)));
 
-	const sync = (ctx: any, args: any): { group: ToolGroup; isAnchor: boolean; show: boolean } | undefined => {
+	// Decided on every render (never cached): rows can be built before the
+	// message_update handler assigned them to a group.
+	const sync = (ctx: any): { group: ToolGroup; isAnchor: boolean; show: boolean } | undefined => {
 		const id = String(ctx?.toolCallId ?? "");
 		if (!id) return undefined;
 		rememberInvalidator(id, ctx?.invalidate);
@@ -452,29 +455,55 @@ function groupedRenderers(name: string, inner: ToolRenderers): ToolRenderers {
 		return { ...found, show: Boolean(ctx?.expanded) || found.group.expanded };
 	};
 
+	// Pi hands back whatever we returned as context.lastComponent; inner
+	// renderers (`context.lastComponent ?? new Text()` + setText) must only
+	// ever see components they produced themselves.
+	const innerRecord = (ctx: any): { call?: Component; result?: Component } | undefined => {
+		const id = String(ctx?.toolCallId ?? "");
+		if (!id) return undefined;
+		let rec = innerRows.get(id);
+		if (!rec) {
+			rec = {};
+			innerRows.set(id, rec);
+			while (innerRows.size > MAX_INVALIDATORS) innerRows.delete(innerRows.keys().next().value!);
+		}
+		return rec;
+	};
+	const runInner = (slot: "call" | "result", fn: ((...a: any[]) => Component) | undefined, ctx: any, call: (c: any) => Component): Component => {
+		const rec = innerRecord(ctx);
+		const clean = { ...ctx, lastComponent: rec?.[slot] };
+		const out = call(clean);
+		if (rec) rec[slot] = out;
+		return out;
+	};
+
 	return {
 		...inner,
 		renderShell: "self",
 		renderCall: (args, theme, context) => {
+			const run = () =>
+				runInner("call", inner.renderCall as any, context, (c) => (inner.renderCall ?? unifiedCall(name))(args, theme, c));
 			try {
-				const g = sync(context, args);
-				if (!g) throw new Error("no group");
-				const base = inner.renderCall ? wrapBase(inner.renderCall(args, theme, context), context) : undefined;
+				const g = sync(context);
+				if (!g) return wrapBase(run(), context);
 				if (!g.show) return g.isAnchor ? new Lines(summaryLine(g.group, theme, true)) : empty();
-				if (!g.isAnchor || !base) return base ?? empty();
+				const base = wrapBase(run(), context);
+				if (!g.isAnchor) return base;
 				return new Stack([new Lines(summaryLine(g.group, theme, false)), base]);
 			} catch {
-				return wrapBase((inner.renderCall ?? unifiedCall(name))(args, theme, context), context);
+				return wrapBase((inner.renderCall ?? unifiedCall(name))(args, theme, { ...context, lastComponent: undefined } as any), context);
 			}
 		},
 		renderResult: (result, options, theme, context) => {
+			const run = () =>
+				runInner("result", inner.renderResult as any, context, (c) => (inner.renderResult ?? unifiedResult(name))(result, options, theme, c));
 			try {
-				const g = sync(context, (context as any)?.args);
-				if (!g) throw new Error("no group");
+				const g = sync(context);
+				if (!g) return wrapBase(run(), context);
 				if (!g.show) return empty();
-				return wrapBase(inner.renderResult!(result, options, theme, context), context);
+				return wrapBase(run(), context);
 			} catch {
-				return wrapBase((inner.renderResult ?? unifiedResult(name))(result, options, theme, context), context);
+				return wrapBase((inner.renderResult ?? unifiedResult(name))(result, options, theme, { ...context, lastComponent: undefined } as any), context);
 			}
 		},
 	};
@@ -573,6 +602,7 @@ export default function (pi: ExtensionAPI): void {
 	const reset = () => {
 		tracker.reset();
 		invalidators.clear();
+		innerRows.clear();
 		announced.clear();
 	};
 	const replay = (_event: unknown, ctx: any) => {
