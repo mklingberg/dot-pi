@@ -22,7 +22,7 @@ import { AssistantMessageComponent, getAgentDir, getSettingsListTheme } from "@e
 import { type Component, Container, type SettingItem, SettingsList, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import { installThinkingDedupe } from "./thinking.ts";
-import { createGroupTracker, DEFAULT_GROUP_EXCLUDE, summarize, type ToolGroup } from "./group.ts";
+import { createGroupTracker, DEFAULT_GROUP_EXCLUDE, leadingNoticeKey, summarize, type ToolGroup } from "./group.ts";
 
 const BULLET = "● ";
 const TREE_LAST = "  └─ ";
@@ -355,6 +355,8 @@ class NotificationView implements Component {
 		const showCost = readShowCost();
 		const all = [this.details, ...(this.details.others ?? [])];
 		const out: string[] = [];
+		// Expanded group whose first member is this notification: it carries the summary header.
+		if (group?.expanded && this.key && leadingNoticeKey(group) === this.key) out.push(truncateToWidth(summaryLine(group, this.theme, false), w, "…"));
 		if (showCost && all.length > 1) {
 			const total = fmtCost(all.reduce((sum, a) => sum + (a.totalCost ?? 0), 0));
 			if (total) {
@@ -512,7 +514,7 @@ function groupedRenderers(name: string, inner: ToolRenderers): ToolRenderers {
 				if (!g) return wrapBase(run(), context);
 				if (!g.show) return g.isAnchor ? new Lines(summaryLine(g.group, theme, true)) : empty();
 				const base = wrapBase(run(), context);
-				if (!g.isAnchor) return base;
+				if (!g.isAnchor || leadingNoticeKey(g.group) !== undefined) return base; // header lives on the leading notification
 				return new Stack([new Lines(summaryLine(g.group, theme, false)), base]);
 			} catch {
 				return wrapBase((inner.renderCall ?? unifiedCall(name))(args, theme, { ...context, lastComponent: undefined } as any), context);
