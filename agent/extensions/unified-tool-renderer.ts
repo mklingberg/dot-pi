@@ -14,14 +14,70 @@
  * plain content lines (no rules, no box) and request renderShell "self" so Pi's
  * default padded/background Box isn't drawn around it.
  */
-import type { ExtensionAPI, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
-import { wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
+import type { ExtensionAPI, ExtensionContext, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
+import { getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
+import { Container, type SettingItem, SettingsList, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 const BULLET = "● ";
 const TREE_LAST = "  └─ ";
 const TREE_STEM = "  │  ";
-const PREVIEW_LINES = 80;
 const MAX_LINE = 1000;
+
+type CollapsedMode = "count" | "first-line" | "hidden";
+
+interface Settings {
+	enabled: boolean;
+	previewLines: string;
+	collapsed: CollapsedMode;
+	summaryWidth: string;
+}
+
+const COLLAPSED_MODES: CollapsedMode[] = ["count", "first-line", "hidden"];
+const PREVIEW_VALUES = ["20", "40", "80", "200"];
+const WIDTH_VALUES = ["48", "72", "120"];
+
+const DEFAULT_SETTINGS: Settings = {
+	enabled: true,
+	previewLines: "80",
+	collapsed: "count",
+	summaryWidth: "72",
+};
+
+function settingsPath(): string {
+	try {
+		return path.join(getAgentDir(), "unified-tool-renderer.json");
+	} catch {
+		return path.join(os.homedir(), ".pi", "agent", "unified-tool-renderer.json");
+	}
+}
+
+function loadSettings(): Settings {
+	try {
+		const raw = JSON.parse(fs.readFileSync(settingsPath(), "utf8"));
+		const s = { ...DEFAULT_SETTINGS, ...raw };
+		s.enabled = s.enabled !== false && s.enabled !== "false";
+		if (!COLLAPSED_MODES.includes(s.collapsed)) s.collapsed = DEFAULT_SETTINGS.collapsed;
+		if (!PREVIEW_VALUES.includes(String(s.previewLines))) s.previewLines = DEFAULT_SETTINGS.previewLines;
+		if (!WIDTH_VALUES.includes(String(s.summaryWidth))) s.summaryWidth = DEFAULT_SETTINGS.summaryWidth;
+		s.previewLines = String(s.previewLines);
+		s.summaryWidth = String(s.summaryWidth);
+		return s;
+	} catch {
+		return { ...DEFAULT_SETTINGS };
+	}
+}
+
+function saveSettings(settings: Settings): void {
+	try {
+		fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2) + "\n");
+	} catch {}
+}
+
+// Live in-memory settings; renderers read this at render time.
+const settings: Settings = loadSettings();
 
 type Ctx = {
 	executionStarted?: boolean;
@@ -69,9 +125,9 @@ function stringArg(args: any, ...keys: string[]): string {
 	return "";
 }
 
-function summarizeCall(name: string, args: any, theme: Theme): string {
+function summarizeCall(name: string, args: any, theme: Theme, width: number): string {
 	const arg = stringArg(args, "path", "file_path", "url", "query", "name", "subject", "tool", "description", "prompt", "summary", "question");
-	return theme.fg("accent", oneLine(arg || humanizeToolName(name), 72));
+	return theme.fg("accent", oneLine(arg || humanizeToolName(name), width));
 }
 
 function textContent(result: any): string {
@@ -90,7 +146,7 @@ function statusPrefix(theme: Theme, ctx: Ctx): string {
 
 function unifiedCall(name: string): NonNullable<ToolRenderers["renderCall"]> {
 	return (args, theme, context) =>
-		new Lines(`${statusPrefix(theme, context as Ctx)}${theme.fg("text", theme.bold(`${humanizeToolName(name)} `))}${summarizeCall(name, args, theme)}`);
+		new Lines(`${statusPrefix(theme, context as Ctx)}${theme.fg("text", theme.bold(`${humanizeToolName(name)} `))}${summarizeCall(name, args, theme, Number(settings.summaryWidth))}`);
 }
 
 function unifiedResult(name: string): NonNullable<ToolRenderers["renderResult"]> {
@@ -104,10 +160,15 @@ function unifiedResult(name: string): NonNullable<ToolRenderers["renderResult"]>
 		}
 		if (lines.length === 0) return new Lines(`${connector(true)}${theme.fg("success", "done")}`);
 		if (lines.length === 1) return new Lines(`${connector(true)}${theme.fg("muted", oneLine(lines[0]!, 120))}`);
+		const previewLines = Number(settings.previewLines);
 		let text = `${connector(true)}${theme.fg("success", `${lines.length} lines returned`)}`;
 		if (expanded) {
-			text += `\n${lines.slice(0, PREVIEW_LINES).map((l) => `${connector(false)}${theme.fg("dim", truncate(l, MAX_LINE))}`).join("\n")}`;
-			if (lines.length > PREVIEW_LINES) text += `\n${connector(false)}${theme.fg("muted", `… ${lines.length - PREVIEW_LINES} more line(s)`)}`;
+			text += `\n${lines.slice(0, previewLines).map((l) => `${connector(false)}${theme.fg("dim", truncate(l, MAX_LINE))}`).join("\n")}`;
+			if (lines.length > previewLines) text += `\n${connector(false)}${theme.fg("muted", `… ${lines.length - previewLines} more line(s)`)}`;
+		} else if (settings.collapsed === "hidden") {
+			return empty();
+		} else if (settings.collapsed === "first-line") {
+			text = `${connector(true)}${theme.fg("muted", oneLine(lines[0]!, 120))}${theme.fg("dim", ` · +${lines.length - 1} lines · ctrl+o to expand`)}`;
 		} else {
 			text += theme.fg("dim", " · ctrl+o to expand");
 		}
@@ -118,6 +179,9 @@ function unifiedResult(name: string): NonNullable<ToolRenderers["renderResult"]>
 export default function (pi: ExtensionAPI): void {
 	pi.registerToolRenderer((name, next) => {
 		const base = next();
+		// Pi caches the resolved definition per tool row at construction, so
+		// toggling "enabled" only affects rows created afterwards.
+		if (!settings.enabled) return base;
 		if (base?.renderCall && base?.renderResult) return base;
 		const covered = Boolean(base?.renderCall || base?.renderResult);
 		return {
@@ -127,5 +191,61 @@ export default function (pi: ExtensionAPI): void {
 			renderCall: base?.renderCall ?? unifiedCall(name),
 			renderResult: base?.renderResult ?? unifiedResult(name),
 		};
+	});
+
+	const openSettings = async (ctx: ExtensionContext) => {
+		const items: SettingItem[] = [
+			{ id: "enabled", label: "Enabled", currentValue: settings.enabled ? "true" : "false", values: ["true", "false"],
+				description: "false falls back to Pi's default rendering — applies to new tool rows only (Pi caches renderers per row)" },
+			{ id: "previewLines", label: "Preview lines", currentValue: settings.previewLines, values: PREVIEW_VALUES,
+				description: "Lines shown in expanded multi-line results" },
+			{ id: "collapsed", label: "Collapsed results", currentValue: settings.collapsed, values: [...COLLAPSED_MODES],
+				description: "count: \"N lines returned\" · first-line: first line + \"+N lines\" · hidden: no result row while collapsed" },
+			{ id: "summaryWidth", label: "Summary width", currentValue: settings.summaryWidth, values: WIDTH_VALUES,
+				description: "Max characters of the argument summary on the call row" },
+		];
+
+		await ctx.ui.custom((tui, theme, _kb, done) => {
+			const container = new Container();
+			container.addChild({
+				render: () => [theme.fg("accent", theme.bold("Unified tool renderer")), ""],
+				invalidate: () => {},
+			});
+			const list = new SettingsList(
+				items,
+				items.length + 2,
+				getSettingsListTheme(),
+				(id, value) => {
+					if (id === "enabled") settings.enabled = value === "true";
+					else if (id === "collapsed") settings.collapsed = value as CollapsedMode;
+					else if (id === "previewLines") settings.previewLines = value;
+					else if (id === "summaryWidth") settings.summaryWidth = value;
+					saveSettings(settings);
+					tui.requestRender();
+				},
+				() => done(undefined),
+				{ enableSearch: true },
+			);
+			container.addChild(list);
+			return {
+				render: (width: number) => container.render(width),
+				invalidate: () => container.invalidate(),
+				handleInput: (data: string) => {
+					list.handleInput(data);
+					tui.requestRender();
+				},
+			};
+		});
+	};
+
+	pi.registerCommand("tool-render", {
+		description: "Unified tool renderer settings",
+		handler: async (_args, ctx) => {
+			if (ctx.mode !== "tui") {
+				ctx.ui.notify("/tool-render settings need the TUI", "info");
+				return;
+			}
+			await openSettings(ctx);
+		},
 	});
 }
