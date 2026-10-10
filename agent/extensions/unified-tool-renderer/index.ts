@@ -50,7 +50,12 @@ interface Settings {
 	groupExclude: string[];
 	/** Collapse consecutive hidden-thinking labels to one per run. Applies live. */
 	dedupeThinking: boolean;
+	/** Theme bg key of the panel behind an expanded tool group; "none" = no panel. Applies live. */
+	groupPanelBg: PanelBg;
 }
+
+type PanelBg = "selectedBg" | "toolPendingBg" | "userMessageBg" | "customMessageBg" | "none";
+const PANEL_BG_VALUES: PanelBg[] = ["selectedBg", "toolPendingBg", "userMessageBg", "customMessageBg", "none"];
 
 const COLLAPSED_MODES: CollapsedMode[] = ["count", "first-line", "hidden"];
 const PREVIEW_VALUES = ["20", "40", "80", "200"];
@@ -69,6 +74,7 @@ const DEFAULT_SETTINGS: Settings = {
 	grouping: true,
 	groupExclude: [...DEFAULT_GROUP_EXCLUDE],
 	dedupeThinking: true,
+	groupPanelBg: "selectedBg",
 };
 
 function settingsPath(): string {
@@ -98,6 +104,7 @@ function loadSettings(): Settings {
 			? [...s.groupExclude]
 			: [...DEFAULT_GROUP_EXCLUDE];
 		s.dedupeThinking = s.dedupeThinking !== false && s.dedupeThinking !== "false";
+		if (!PANEL_BG_VALUES.includes(s.groupPanelBg)) s.groupPanelBg = DEFAULT_SETTINGS.groupPanelBg;
 		s.previewLines = String(s.previewLines);
 		s.summaryWidth = String(s.summaryWidth);
 		return s;
@@ -774,6 +781,8 @@ export default function (pi: ExtensionAPI): void {
 				description: "Collapse consecutive tool calls into one summary line (click or ctrl+o to expand). Excluded tools: groupExclude in unified-tool-renderer.json. New rows only" },
 			{ id: "dedupeThinking", label: "Dedupe thinking labels", currentValue: settings.dedupeThinking ? "true" : "false", values: ["true", "false"],
 				description: "One 'Thinking...' per run of hidden thinking; label sits flush under tool groups. Applies live" },
+			{ id: "groupPanelBg", label: "Open group panel", currentValue: settings.groupPanelBg, values: [...PANEL_BG_VALUES],
+				description: "Background of an expanded tool group; none = no panel. Applies live" },
 			{ id: "previewLines", label: "Preview lines", currentValue: settings.previewLines, values: PREVIEW_VALUES,
 				description: "Lines shown in expanded multi-line results" },
 			{ id: "collapsed", label: "Collapsed results", currentValue: settings.collapsed, values: [...COLLAPSED_MODES],
@@ -799,7 +808,10 @@ export default function (pi: ExtensionAPI): void {
 					else if (id === "notificationCollapsed") settings.notificationCollapsed = value === "true";
 					else if (id === "grouping") settings.grouping = value === "true";
 					else if (id === "dedupeThinking") settings.dedupeThinking = value === "true";
-					else if (id === "collapsed") settings.collapsed = value as CollapsedMode;
+					else if (id === "groupPanelBg") {
+						settings.groupPanelBg = value as PanelBg;
+						for (const [rowId] of st.invalidators) notify(st, rowId);
+					} else if (id === "collapsed") settings.collapsed = value as CollapsedMode;
 					else if (id === "previewLines") settings.previewLines = value;
 					else if (id === "summaryWidth") settings.summaryWidth = value;
 					saveSettings(settings);
