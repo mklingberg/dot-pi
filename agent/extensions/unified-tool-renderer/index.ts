@@ -21,7 +21,7 @@ import type { ExtensionAPI, ExtensionContext, Theme, ToolRenderers } from "@eare
 import { AssistantMessageComponent, CustomMessageComponent, ToolExecutionComponent, getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, type SettingItem, SettingsList, type TuiMouseEvent, type TuiMouseEventResult, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-import { installThinkingDedupe } from "./thinking.ts";
+import { installThinkingDedupe, type GroupHooks } from "./thinking.ts";
 import { createGroupTracker, DEFAULT_GROUP_EXCLUDE, leadingNoticeKey, summarize, rowExpanded, syncExpandEdge, toggleFlip, type ToolGroup } from "./group.ts";
 
 const BULLET = "● ";
@@ -520,7 +520,9 @@ class PadLines implements Component {
 function summaryLine(group: ToolGroup, theme: Theme, hint: boolean): string {
 	const running = group.items.some((i) => i.status === "running");
 	const failed = group.items.some((i) => i.status === "error");
-	const bullet = theme.fg(running ? "warning" : failed ? "error" : "success", BULLET);
+	// Open panel: ▾ instead of ● (same width).
+	const glyph = group.expanded && settings.groupPanelBg !== "none" ? "▾ " : BULLET;
+	const bullet = theme.fg(running ? "warning" : failed ? "error" : "success", glyph);
 	return `${bullet}${theme.fg("muted", summarize(group.items, group.notices))}${hint ? theme.fg("dim", group.expanded ? " · click to collapse" : " · click to expand") : ""}`;
 }
 
@@ -640,7 +642,39 @@ function resolveBase(name: string, base: ToolRenderers | undefined): ToolRendere
 
 export default function (pi: ExtensionAPI): void {
 	const st = createGroupState();
-	installThinkingDedupe(pi, AssistantMessageComponent, ToolExecutionComponent, CustomMessageComponent, () => settings.dedupeThinking);
+	// Live theme of the interactive UI (needed to colour the open group panel).
+	let ui: { readonly theme: Theme } | undefined;
+	pi.on("session_start", (_event: unknown, ctx: any) => {
+		if (ctx?.hasUI) ui = ctx.ui;
+	});
+	const hooks: GroupHooks = {
+		groupOf: (child) => {
+			if (!settings.grouping) return undefined;
+			let group: ToolGroup | undefined;
+			if (child instanceof ToolExecutionComponent) group = st.tracker.lookup(String(child.toolCallId))?.group;
+			else if (child instanceof CustomMessageComponent && child.message?.customType === NOTIFICATION_TYPE) {
+				const key = noticeKey(child.message);
+				group = key ? st.tracker.lookupNotification(key) : undefined;
+			}
+			return group ? { group, expanded: group.expanded } : undefined;
+		},
+		panel: () => {
+			const key = settings.groupPanelBg;
+			const theme = ui?.theme;
+			if (key === "none" || !theme) return undefined;
+			// Re-open the background after any inner reset so it survives mid-line SGR resets.
+			const open = theme.bg(key, "\0").split("\0")[0]!;
+			// applyBackgroundToLine is not exported by pi-tui's index; same logic: pad to width, wrap in bg.
+			return {
+				fill: (line, width) => {
+					const reopened = line.replace(/\x1b\[(?:0|49)?m/g, (m) => m + open);
+					return theme.bg(key, reopened + " ".repeat(Math.max(0, width - visibleWidth(line))));
+				},
+			};
+		},
+		toggle: (group) => toggleGroup(st, group as ToolGroup),
+	};
+	installThinkingDedupe(pi, AssistantMessageComponent, ToolExecutionComponent, CustomMessageComponent, () => settings.dedupeThinking, hooks);
 
 	pi.registerToolRenderer((name, next) => {
 		const base = next();

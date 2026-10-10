@@ -172,6 +172,44 @@ export function panelLines(lines: string[], { first, last, fill }: PanelOptions)
 // Pi-facing part: patch Container.prototype.render (type-only Pi imports).
 // ---------------------------------------------------------------------------
 
+/** Hooks that let the chat-container patch render open tool groups as one panel. */
+export interface GroupHooks {
+	/** Group membership of a chat child (tool row / notification), if any. */
+	groupOf(child: any): { group: object; expanded: boolean } | undefined;
+	/** Panel fill, or undefined when the panel is off. Read on every render (live setting). */
+	panel(): { fill: (line: string, width: number) => string } | undefined;
+	toggle(group: object): void;
+}
+
+/**
+ * Wraps a member child in the mouse layout: the padded panel lines (top = first
+ * member's leading blank, bottom = appended pad) toggle the group; everything else
+ * goes to the child with y corrected for lines added/dropped by the panel.
+ */
+class PanelMouse {
+	private readonly child: any;
+	private readonly shift: number;
+	private readonly height: number;
+	private readonly first: boolean;
+	private readonly bottom: boolean;
+	private readonly toggle: () => void;
+	constructor(child: any, shift: number, height: number, first: boolean, bottom: boolean, toggle: () => void) {
+		this.child = child;
+		this.shift = shift;
+		this.height = height;
+		this.first = first;
+		this.bottom = bottom;
+		this.toggle = toggle;
+	}
+	handleMouse(event: any): any {
+		if (event?.type === "click" && event.button === "left" && ((this.first && event.y === 0) || (this.bottom && event.y === this.height - 1))) {
+			this.toggle();
+			return { handled: true };
+		}
+		return this.child.handleMouse?.({ ...event, y: event.y - this.shift });
+	}
+}
+
 const PATCH_KEY = Symbol.for("unified-tool-renderer.thinking-dedupe");
 
 interface PatchState {
@@ -192,6 +230,7 @@ export function installThinkingDedupe(
 	ToolExecutionComponent: abstract new (...args: any[]) => any,
 	CustomMessageComponent: abstract new (...args: any[]) => any,
 	isEnabled: () => boolean,
+	hooks?: GroupHooks,
 ): void {
 	const proto: any = Object.getPrototypeOf((AssistantMessageComponent as any).prototype);
 	if (!proto || typeof proto.render !== "function") return;
@@ -206,8 +245,10 @@ export function installThinkingDedupe(
 		const original: (width: number) => string[] = proto.render;
 		const patched = function (this: any, width: number): string[] {
 			let enabled = false;
+			let panel: ReturnType<GroupHooks["panel"]>;
 			try {
-				enabled = isEnabled() && Array.isArray(this.children) && this.children.some((c: any) => c instanceof AssistantMessageComponent);
+				panel = hooks?.panel();
+				enabled = (isEnabled() || Boolean(panel)) && Array.isArray(this.children) && this.children.some((c: any) => c instanceof AssistantMessageComponent);
 			} catch {}
 			if (!enabled) return original.call(this, width);
 			try {
@@ -220,13 +261,34 @@ export function installThinkingDedupe(
 						: child instanceof ToolExecutionComponent ? "tool"
 						: child instanceof CustomMessageComponent ? "custom"
 						: "other";
-					return { lines, label, kind };
+					const info = panel ? hooks!.groupOf(child) : undefined;
+					return { lines, label, kind, group: info?.group, groupExpanded: info?.expanded };
 				});
-				const deduped = dedupeThinkingRuns(rendered);
+				const deduped = dedupeThinkingRuns(rendered, { dedupe: isEnabled() });
+				// First / last visible member of each expanded group (display order).
+				const firstOf = new Map<object, number>();
+				const lastOf = new Map<object, number>();
+				if (panel) {
+					rendered.forEach((r, i) => {
+						if (!r.group || !r.groupExpanded || deduped[i]!.length === 0) return;
+						if (!firstOf.has(r.group)) firstOf.set(r.group, i);
+						lastOf.set(r.group, i);
+					});
+				}
 				const out: string[] = [];
-				const mouseChildren = deduped.map((lines, i) => {
+				const mouseChildren = deduped.map((raw, i) => {
+					const r = rendered[i]!;
+					let lines = raw;
+					let component: any = children[i];
+					if (panel && r.group && r.groupExpanded && raw.length > 0) {
+						const first = firstOf.get(r.group) === i;
+						const res = panelLines(raw, { first, last: lastOf.get(r.group) === i, fill: (l) => panel!.fill(l, width) });
+						lines = res.lines;
+						const group = r.group;
+						component = new PanelMouse(children[i], res.shift, lines.length, first, res.bottom, () => hooks!.toggle(group));
+					}
 					for (const line of lines) out.push(line);
-					return { component: children[i], height: lines.length };
+					return { component, height: lines.length };
 				});
 				this.mouseLayout = { width, children: mouseChildren };
 				return out;
