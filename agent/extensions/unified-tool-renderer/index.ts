@@ -388,30 +388,169 @@ class NotificationView implements Component {
 	}
 }
 
+// ---- grouping (Claude Code style summary of consecutive tool calls) ----
+
+const tracker = createGroupTracker({ exclude: settings.groupExclude });
+const invalidators = new Map<string, () => void>();
+const MAX_INVALIDATORS = 512;
+
+function rememberInvalidator(id: string, fn: unknown): void {
+	if (typeof fn !== "function") return;
+	invalidators.delete(id);
+	invalidators.set(id, fn as () => void);
+	while (invalidators.size > MAX_INVALIDATORS) invalidators.delete(invalidators.keys().next().value!);
+}
+
+function notify(id: string | undefined): void {
+	if (!id) return;
+	const fn = invalidators.get(id);
+	if (!fn) return;
+	queueMicrotask(() => {
+		try {
+			fn();
+		} catch {}
+	});
+}
+
+function notifyGroup(group: ToolGroup, exceptId?: string): void {
+	for (const item of group.items) if (item.id !== exceptId) notify(item.id);
+}
+
+/** Adds the outputPad horizontal indent that Pi's default shell would have drawn. */
+class PadLines implements Component {
+	constructor(private readonly inner: Component, private readonly pad: number) {}
+	invalidate(): void {
+		this.inner.invalidate();
+	}
+	render(width: number): string[] {
+		const pad = " ".repeat(this.pad);
+		return this.inner.render(Math.max(1, width - this.pad * 2)).map((l) => pad + l);
+	}
+}
+
+function summaryLine(group: ToolGroup, theme: Theme, hint: boolean): string {
+	const running = group.items.some((i) => i.status === "running");
+	const failed = group.items.some((i) => i.status === "error");
+	const bullet = theme.fg(running ? "warning" : failed ? "error" : "success", BULLET);
+	return `${bullet}${theme.fg("muted", summarize(group.items))}${hint ? theme.fg("dim", " · click to expand") : ""}`;
+}
+
+function groupedRenderers(name: string, inner: ToolRenderers): ToolRenderers {
+	const selfShell = inner.renderShell === "self";
+	const wrapBase = (c: Component, ctx: any): Component => (selfShell ? c : new PadLines(c, Number(ctx?.outputPad ?? 1)));
+
+	const sync = (ctx: any, args: any): { group: ToolGroup; isAnchor: boolean; show: boolean } | undefined => {
+		const id = String(ctx?.toolCallId ?? "");
+		if (!id) return undefined;
+		rememberInvalidator(id, ctx?.invalidate);
+		const found = tracker.lookup(id, name, args);
+		if (!found) return undefined;
+		if (found.isAnchor && Boolean(ctx?.expanded) !== found.group.expanded) {
+			found.group.expanded = Boolean(ctx?.expanded);
+			notifyGroup(found.group, id);
+		}
+		return { ...found, show: Boolean(ctx?.expanded) || found.group.expanded };
+	};
+
+	return {
+		...inner,
+		renderShell: "self",
+		renderCall: (args, theme, context) => {
+			try {
+				const g = sync(context, args);
+				if (!g) throw new Error("no group");
+				const base = inner.renderCall ? wrapBase(inner.renderCall(args, theme, context), context) : undefined;
+				if (!g.show) return g.isAnchor ? new Lines(summaryLine(g.group, theme, true)) : empty();
+				if (!g.isAnchor || !base) return base ?? empty();
+				return new Stack([new Lines(summaryLine(g.group, theme, false)), base]);
+			} catch {
+				return wrapBase((inner.renderCall ?? unifiedCall(name))(args, theme, context), context);
+			}
+		},
+		renderResult: (result, options, theme, context) => {
+			try {
+				const g = sync(context, (context as any)?.args);
+				if (!g) throw new Error("no group");
+				if (!g.show) return empty();
+				return wrapBase(inner.renderResult!(result, options, theme, context), context);
+			} catch {
+				return wrapBase((inner.renderResult ?? unifiedResult(name))(result, options, theme, context), context);
+			}
+		},
+	};
+}
+
+class Stack implements Component {
+	constructor(private readonly parts: Component[]) {}
+	invalidate(): void {
+		for (const p of this.parts) p.invalidate();
+	}
+	render(width: number): string[] {
+		return this.parts.flatMap((p) => p.render(width));
+	}
+}
+
+function resolveBase(name: string, base: ToolRenderers | undefined): ToolRenderers | undefined {
+	if (settings.headerTakeover && settings.headerTools.includes(name) && base?.renderCall && base?.renderResult) {
+		return {
+			...base,
+			renderShell: "self",
+			renderCall: unifiedCall(name),
+			renderResult: takeoverResult(base.renderResult),
+		};
+	}
+	if (base?.renderCall && base?.renderResult) return base;
+	const covered = Boolean(base?.renderCall || base?.renderResult);
+	return {
+		...base,
+		// Fully uncovered: own the shell so Pi draws no default padded box.
+		renderShell: base?.renderShell ?? (covered ? undefined : "self"),
+		renderCall: base?.renderCall ?? unifiedCall(name),
+		renderResult: base?.renderResult ?? unifiedResult(name),
+	};
+}
+
 export default function (pi: ExtensionAPI): void {
 	pi.registerToolRenderer((name, next) => {
 		const base = next();
 		// Pi caches the resolved definition per tool row at construction, so
 		// toggling "enabled" only affects rows created afterwards.
 		if (!settings.enabled) return base;
-		if (settings.headerTakeover && settings.headerTools.includes(name) && base?.renderCall && base?.renderResult) {
-			return {
-				...base,
-				renderShell: "self",
-				renderCall: unifiedCall(name),
-				renderResult: takeoverResult(base.renderResult),
-			};
+		const resolved = resolveBase(name, base);
+		if (!settings.grouping || !resolved || settings.groupExclude.includes(name)) return resolved;
+		try {
+			return groupedRenderers(name, resolved);
+		} catch {
+			return resolved;
 		}
-		if (base?.renderCall && base?.renderResult) return base;
-		const covered = Boolean(base?.renderCall || base?.renderResult);
-		return {
-			...base,
-			// Fully uncovered: own the shell so Pi draws no default padded box.
-			renderShell: base?.renderShell ?? (covered ? undefined : "self"),
-			renderCall: base?.renderCall ?? unifiedCall(name),
-			renderResult: base?.renderResult ?? unifiedResult(name),
-		};
 	});
+
+	// Feed the group tracker. Nested calls (made by another tool) have no row of their own.
+	pi.on("tool_execution_start", (event: any) => {
+		if (event.parentToolCallId) return;
+		const id = String(event.toolCallId);
+		tracker.onToolStart(id, String(event.toolName), event.args ?? event.input ?? {});
+		const found = tracker.lookup(id, String(event.toolName), event.args ?? {});
+		if (found) notify(found.group.items[0]?.id);
+	});
+	pi.on("tool_execution_end", (event: any) => {
+		if (event.parentToolCallId) return;
+		const id = String(event.toolCallId);
+		tracker.onToolEnd(id, { isError: Boolean(event.isError) });
+		const found = tracker.lookup(id, String(event.toolName), {});
+		if (found) notify(found.group.items[0]?.id);
+	});
+	pi.on("message_end", (event: any) => {
+		const m = event?.message;
+		if (m?.role === "user") tracker.closeGroup();
+		else if (m?.role === "assistant" && Array.isArray(m.content) && m.content.some((c: any) => c?.type === "text" && String(c.text ?? "").trim())) tracker.closeGroup();
+	});
+	const reset = () => {
+		tracker.reset();
+		invalidators.clear();
+	};
+	pi.on("session_start", reset);
+	pi.on("session_shutdown", reset);
 
 	if (settings.notificationTakeover) {
 		pi.registerMessageRenderer<NotificationDetails>("subagent-notification", (message, { expanded }, theme) => {
