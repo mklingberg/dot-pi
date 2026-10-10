@@ -13,119 +13,169 @@ test("default exclude list", () => {
 	assert.deepEqual(DEFAULT_GROUP_EXCLUDE, ["edit", "write", "Agent", "SubagentWorkflow", "ask_user_question"]);
 });
 
+const call = (id: string, name = "read", args: any = {}) => ({ type: "toolCall", id, name, arguments: args });
+const text = (t = "hello") => ({ type: "text", text: t });
+const ids = (t: ReturnType<typeof createGroupTracker>, id: string) => t.lookup(id)!.group.items.map((i) => i.id);
+
 test("consecutive calls join one group, first is anchor", () => {
 	const t = createGroupTracker();
-	t.onToolStart("a", "read", {});
-	t.onToolStart("b", "grep", {});
-	const a = t.lookup("a", "read", {})!;
-	const b = t.lookup("b", "grep", {})!;
+	t.onAssistantContent([call("a"), call("b", "grep")]);
+	const a = t.lookup("a")!;
+	const b = t.lookup("b")!;
 	assert.equal(a.group, b.group);
 	assert.equal(a.isAnchor, true);
 	assert.equal(b.isAnchor, false);
-	assert.deepEqual(a.group.items.map((i) => i.id), ["a", "b"]);
+	assert.deepEqual(ids(t, "a"), ["a", "b"]);
 	assert.equal(a.group.expanded, false);
 });
 
-test("excluded tool is not grouped and closes the group", () => {
+test("lookup of unknown id is read-only and returns undefined", () => {
 	const t = createGroupTracker();
-	t.onToolStart("a", "read", {});
-	t.onToolStart("e", "edit", {});
-	t.onToolStart("b", "read", {});
-	assert.equal(t.lookup("e", "edit", {}), undefined);
-	assert.notEqual(t.lookup("a", "read", {})!.group, t.lookup("b", "read", {})!.group);
+	assert.equal(t.lookup("x"), undefined);
+	t.onAssistantContent([call("a")]);
+	assert.equal(t.lookup("x"), undefined);
+	assert.deepEqual(ids(t, "a"), ["a"]);
+});
+
+test("streamed partial messages re-walked do not duplicate or reassign", () => {
+	const t = createGroupTracker();
+	t.onAssistantContent([call("a", "read", {})]);
+	t.onAssistantContent([call("a", "read", { path: "p" })]);
+	t.onAssistantContent([call("a", "read", { path: "p" }), call("b")]);
+	t.onAssistantContent([call("a", "read", { path: "p" }), call("b")]);
+	assert.deepEqual(ids(t, "a"), ["a", "b"]);
+	assert.deepEqual(t.lookup("a")!.group.items[0]!.args, { path: "p" });
+});
+
+test("text block closes the group, once", () => {
+	const t = createGroupTracker();
+	t.onAssistantContent([call("a"), text(), call("b")]);
+	t.onAssistantContent([call("a"), text(), call("b"), call("c")]);
+	assert.notEqual(t.lookup("a")!.group, t.lookup("b")!.group);
+	assert.deepEqual(ids(t, "b"), ["b", "c"]);
+	assert.equal(t.lookup("b")!.isAnchor, true);
+});
+
+test("empty text does not close; later non-empty text does", () => {
+	const t = createGroupTracker();
+	t.onAssistantContent([call("a"), text("")]);
+	t.onAssistantContent([call("a"), text("hi"), call("b")]);
+	assert.notEqual(t.lookup("a")!.group, t.lookup("b")!.group);
+});
+
+test("excluded tool is not grouped, closes the group, re-walk is stable", () => {
+	const t = createGroupTracker();
+	const c = [call("a"), call("e", "edit"), call("b")];
+	t.onAssistantContent(c);
+	t.onAssistantContent(c);
+	assert.equal(t.lookup("e"), undefined);
+	assert.notEqual(t.lookup("a")!.group, t.lookup("b")!.group);
+	assert.equal(t.lookup("b")!.isAnchor, true);
+});
+
+test("tool-only messages across turns merge", () => {
+	const t = createGroupTracker();
+	t.onAssistantContent([call("a")]);
+	t.onAssistantContent([call("b")]);
+	t.onAssistantContent([call("c")]);
+	assert.deepEqual(ids(t, "a"), ["a", "b", "c"]);
+});
+
+test("user message closes the group", () => {
+	const t = createGroupTracker();
+	t.onAssistantContent([call("a")]);
+	t.onUserMessage();
+	t.onAssistantContent([call("b")]);
+	assert.notEqual(t.lookup("a")!.group, t.lookup("b")!.group);
 });
 
 test("closeGroup starts a new group", () => {
 	const t = createGroupTracker();
-	t.onToolStart("a", "read", {});
+	t.onAssistantContent([call("a")]);
 	t.closeGroup();
-	t.onToolStart("b", "read", {});
-	assert.notEqual(t.lookup("a", "read", {})!.group, t.lookup("b", "read", {})!.group);
+	t.onAssistantContent([call("b")]);
+	assert.notEqual(t.lookup("a")!.group, t.lookup("b")!.group);
 });
 
-test("onToolEnd marks done / error", () => {
+test("regression: rows before tool start; next message gets its own anchor", () => {
 	const t = createGroupTracker();
+	t.onAssistantContent([call("r1"), call("g2", "grep"), call("f3", "find"), call("b4", "bash")]);
+	for (const id of ["r1", "g2", "f3", "b4"]) assert.ok(t.lookup(id));
+	for (const [id, n] of [["r1", "read"], ["g2", "grep"], ["f3", "find"], ["b4", "bash"]]) t.onToolStart(id!, n!, {});
+	assert.equal(t.lookup("r1")!.isAnchor, true);
+	assert.equal(t.lookup("g2")!.isAnchor, false);
+	t.closeGroup();
+	t.onAssistantContent([call("b5", "bash"), call("tb6", "tool_batch")]);
+	assert.equal(t.lookup("b5")!.isAnchor, true);
+	assert.equal(t.lookup("tb6")!.isAnchor, false);
+	assert.notEqual(t.lookup("b5")!.group, t.lookup("r1")!.group);
+});
+
+test("status: running reachable, done / error on end", () => {
+	const t = createGroupTracker();
+	t.onAssistantContent([call("a"), call("b")]);
+	assert.deepEqual(t.lookup("a")!.group.items.map((i) => i.status), ["running", "running"]);
 	t.onToolStart("a", "read", {});
-	t.onToolStart("b", "read", {});
 	t.onToolEnd("a", { isError: false });
 	t.onToolEnd("b", { isError: true });
-	const items = t.lookup("a", "read", {})!.group.items;
-	assert.deepEqual(items.map((i) => i.status), ["done", "error"]);
+	assert.deepEqual(t.lookup("a")!.group.items.map((i) => i.status), ["done", "error"]);
 });
 
-test("lookup of unknown ids builds a render-time group, never the live one", () => {
+test("replay status option and status reported before assignment", () => {
 	const t = createGroupTracker();
-	const x = t.lookup("x", "read", {})!;
-	const y = t.lookup("y", "grep", {})!;
-	assert.equal(x.group, y.group);
-	assert.equal(x.isAnchor, true);
-	assert.equal(y.isAnchor, false);
-	t.onToolStart("live", "read", {});
-	assert.notEqual(t.lookup("live", "read", {})!.group, x.group);
-});
-
-test("render-time group is broken by an excluded call", () => {
-	const t = createGroupTracker();
-	const x = t.lookup("x", "read", {})!;
-	assert.equal(t.lookup("e", "write", {}), undefined);
-	const y = t.lookup("y", "read", {})!;
-	assert.notEqual(x.group, y.group);
-	assert.equal(y.isAnchor, true);
+	t.onAssistantContent([call("a")], "done");
+	assert.equal(t.lookup("a")!.group.items[0]!.status, "done");
+	t.onToolEnd("z", { isError: true });
+	t.onAssistantContent([call("a"), call("z")]);
+	assert.equal(t.lookup("z")!.group.items[0]!.status, "done");
+	assert.equal(t.lookup("z")!.group.items[1]!.status, "error");
 });
 
 test("expanded is mutable per group", () => {
 	const t = createGroupTracker();
-	t.onToolStart("a", "read", {});
-	t.lookup("a", "read", {})!.group.expanded = true;
-	assert.equal(t.lookup("a", "read", {})!.group.expanded, true);
+	t.onAssistantContent([call("a")]);
+	t.lookup("a")!.group.expanded = true;
+	assert.equal(t.lookup("a")!.group.expanded, true);
 });
 
 test("reset clears everything", () => {
 	const t = createGroupTracker();
-	t.onToolStart("a", "read", {});
+	t.onAssistantContent([call("a")]);
 	t.reset();
-	t.onToolStart("b", "read", {});
-	assert.deepEqual(t.lookup("b", "read", {})!.group.items.map((i) => i.id), ["b"]);
-	assert.equal(t.lookup("b", "read", {})!.isAnchor, true);
+	assert.equal(t.lookup("a"), undefined);
+	t.onAssistantContent([call("b")]);
+	assert.deepEqual(ids(t, "b"), ["b"]);
 });
 
 test("custom exclude list", () => {
 	const t = createGroupTracker({ exclude: ["bash"] });
-	t.onToolStart("a", "bash", {});
-	t.onToolStart("b", "edit", {});
-	assert.equal(t.lookup("a", "bash", {}), undefined);
-	assert.ok(t.lookup("b", "edit", {}));
+	t.onAssistantContent([call("a", "bash"), call("b", "edit")]);
+	assert.equal(t.lookup("a"), undefined);
+	assert.ok(t.lookup("b"));
 });
 
 test("group longer than maxGroupItems starts a new group", () => {
 	const t = createGroupTracker({ maxGroupItems: 2 });
-	for (const id of ["a", "b", "c"]) t.onToolStart(id, "read", {});
-	const a = t.lookup("a", "read", {})!;
-	const c = t.lookup("c", "read", {})!;
-	assert.notEqual(a.group, c.group);
-	assert.equal(a.group.items.length, 2);
-	assert.equal(c.isAnchor, true);
+	t.onAssistantContent([call("a"), call("b"), call("c")]);
+	assert.notEqual(t.lookup("a")!.group, t.lookup("c")!.group);
+	assert.equal(t.lookup("a")!.group.items.length, 2);
+	assert.equal(t.lookup("c")!.isAnchor, true);
 });
 
 test("maxItems evicts oldest finished groups whole", () => {
 	const t = createGroupTracker({ maxItems: 3, maxGroupItems: 2 });
-	for (const id of ["a", "b", "c"]) {
-		t.onToolStart(id, "read", {});
-		t.onToolEnd(id, {});
-	}
-	t.onToolStart("d", "read", {});
-	// group [a,b] evicted whole; ids a,b are now unknown again (re-enter as render-time)
-	assert.deepEqual(t.lookup("c", "read", {})!.group.items.map((i) => i.id), ["c", "d"]);
-	const a = t.lookup("a", "read", {})!;
-	assert.deepEqual(a.group.items.map((i) => i.id), ["a"]);
+	t.onAssistantContent([call("a"), call("b"), call("c")]);
+	for (const id of ["a", "b", "c"]) t.onToolEnd(id, {});
+	t.onAssistantContent([call("a"), call("b"), call("c"), call("d")]);
+	assert.equal(t.lookup("a"), undefined);
+	assert.equal(t.lookup("b"), undefined);
+	assert.deepEqual(ids(t, "c"), ["c", "d"]);
 });
 
 test("eviction never removes running groups", () => {
 	const t = createGroupTracker({ maxItems: 2, maxGroupItems: 1 });
-	t.onToolStart("a", "read", {});
-	t.onToolStart("b", "read", {});
-	t.onToolStart("c", "read", {});
-	assert.equal(t.lookup("a", "read", {})!.group.items[0]!.id, "a");
+	t.onAssistantContent([call("a"), call("b"), call("c")]);
+	assert.ok(t.lookup("a"));
 });
 
 test("summarize: single kinds, plural-aware", () => {
