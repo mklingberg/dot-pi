@@ -1,0 +1,9 @@
+{
+  "view": "full",
+  "pendingPlans": "5",
+  "showTitles": true,
+  "showTasks": true,
+  "showIssues": true,
+  "showDeferred": true,
+  "showDone": true
+}
