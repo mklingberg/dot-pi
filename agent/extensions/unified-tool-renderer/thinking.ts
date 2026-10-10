@@ -123,6 +123,11 @@ export function dedupeThinkingRuns(children: DedupeChild[], options: DedupeOptio
 	});
 }
 
+/** Columns of inner padding left/right of the panel content (members render at width − 2·PANEL_PAD_X). */
+export const PANEL_PAD_X = 2;
+/** Blank panel lines directly under the group header line. */
+export const PANEL_HEADER_GAP = 1;
+
 export interface PanelOptions {
 	/** First member of the open group: its leading blank line is the top padding. */
 	first: boolean;
@@ -130,6 +135,10 @@ export interface PanelOptions {
 	last: boolean;
 	/** Fills one line to the panel background. */
 	fill: (line: string) => string;
+	/** Left indent (columns) put in front of every non-empty content line. Default PANEL_PAD_X. */
+	padX?: number;
+	/** Blank lines inserted under the header (first non-blank line of the first member). Default PANEL_HEADER_GAP. */
+	headerGap?: number;
 }
 
 export interface PanelResult {
@@ -138,6 +147,10 @@ export interface PanelResult {
 	shift: number;
 	/** Whether a padded line was appended below. */
 	bottom: boolean;
+	/** Output index of the first header-gap line (undefined = no gap). */
+	gapAt?: number;
+	/** Number of header-gap lines. */
+	gap: number;
 }
 
 /**
@@ -146,8 +159,8 @@ export interface PanelResult {
  * or a new one), later members lose their leading blank lines (rows sit tight),
  * the last member gets a padded blank line below.
  */
-export function panelLines(lines: string[], { first, last, fill }: PanelOptions): PanelResult {
-	if (lines.length === 0) return { lines: [], shift: 0, bottom: false };
+export function panelLines(lines: string[], { first, last, fill, padX = PANEL_PAD_X, headerGap = PANEL_HEADER_GAP }: PanelOptions): PanelResult {
+	if (lines.length === 0) return { lines: [], shift: 0, bottom: false, gap: 0 };
 	let body = lines;
 	let shift = 0;
 	if (first) {
@@ -163,9 +176,20 @@ export function panelLines(lines: string[], { first, last, fill }: PanelOptions)
 			shift = -n;
 		}
 	}
-	const out = body.map(fill);
+	const indent = " ".repeat(padX);
+	const out: string[] = [];
+	let gapAt: number | undefined;
+	let headerSeen = false;
+	for (const l of body) {
+		out.push(fill(indent + l));
+		if (first && headerGap > 0 && !headerSeen && strip(l).trim() !== "") {
+			headerSeen = true;
+			gapAt = out.length;
+			for (let g = 0; g < headerGap; g++) out.push(fill(""));
+		}
+	}
 	if (last) out.push(fill(""));
-	return { lines: out, shift, bottom: last };
+	return { lines: out, shift, bottom: last, gapAt, gap: gapAt === undefined ? 0 : headerGap };
 }
 
 // ---------------------------------------------------------------------------
@@ -193,20 +217,29 @@ class PanelMouse {
 	private readonly first: boolean;
 	private readonly bottom: boolean;
 	private readonly toggle: () => void;
-	constructor(child: any, shift: number, height: number, first: boolean, bottom: boolean, toggle: () => void) {
+	private readonly gapAt: number | undefined;
+	private readonly gap: number;
+	private readonly padX: number;
+	constructor(child: any, res: PanelResult, height: number, first: boolean, padX: number, toggle: () => void) {
 		this.child = child;
-		this.shift = shift;
+		this.shift = res.shift;
+		this.gapAt = res.gapAt;
+		this.gap = res.gap;
+		this.padX = padX;
 		this.height = height;
 		this.first = first;
-		this.bottom = bottom;
+		this.bottom = res.bottom;
 		this.toggle = toggle;
 	}
 	handleMouse(event: any): any {
-		if (event?.type === "click" && event.button === "left" && ((this.first && event.y === 0) || (this.bottom && event.y === this.height - 1))) {
+		const inGap = this.gapAt !== undefined && event.y >= this.gapAt && event.y < this.gapAt + this.gap;
+		if (event?.type === "click" && event.button === "left" && ((this.first && event.y === 0) || (this.bottom && event.y === this.height - 1) || inGap)) {
 			this.toggle();
 			return { handled: true };
 		}
-		return this.child.handleMouse?.({ ...event, y: event.y - this.shift });
+		const afterGap = this.gapAt !== undefined && event.y >= this.gapAt + this.gap ? this.gap : 0;
+		const x = typeof event.x === "number" ? event.x - this.padX : event.x;
+		return this.child.handleMouse?.({ ...event, x, y: event.y - this.shift - afterGap });
 	}
 }
 
@@ -254,14 +287,14 @@ export function installThinkingDedupe(
 			try {
 				const children: any[] = this.children;
 				const rendered = children.map((child) => {
-					const lines: string[] = child.render(width);
+					const info = panel ? hooks!.groupOf(child) : undefined;
+					const lines: string[] = child.render(info?.expanded ? Math.max(1, width - 2 * PANEL_PAD_X) : width);
 					const label = child instanceof AssistantMessageComponent ? String(child.hiddenThinkingLabel ?? "Thinking...") : undefined;
 					const kind: DedupeChild["kind"] =
 						label !== undefined ? "assistant"
 						: child instanceof ToolExecutionComponent ? "tool"
 						: child instanceof CustomMessageComponent ? "custom"
 						: "other";
-					const info = panel ? hooks!.groupOf(child) : undefined;
 					return { lines, label, kind, group: info?.group, groupExpanded: info?.expanded };
 				});
 				const deduped = dedupeThinkingRuns(rendered, { dedupe: isEnabled() });
@@ -285,7 +318,7 @@ export function installThinkingDedupe(
 						const res = panelLines(raw, { first, last: lastOf.get(r.group) === i, fill: (l) => panel!.fill(l, width) });
 						lines = res.lines;
 						const group = r.group;
-						component = new PanelMouse(children[i], res.shift, lines.length, first, res.bottom, () => hooks!.toggle(group));
+						component = new PanelMouse(children[i], res, lines.length, first, PANEL_PAD_X, () => hooks!.toggle(group));
 					}
 					for (const line of lines) out.push(line);
 					return { component, height: lines.length };

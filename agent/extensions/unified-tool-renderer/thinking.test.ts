@@ -185,28 +185,54 @@ test("dedupe:false only hides labels inside open groups", () => {
 	assert.deepEqual(out[3], []);
 });
 
-import { panelLines } from "./thinking.ts";
+import { panelLines, PANEL_PAD_X, PANEL_HEADER_GAP } from "./thinking.ts";
 const fill = (l: string) => `«${l.padEnd(10)}»`;
 
 test("panelLines: first member keeps its leading blank as top pad, last gets bottom pad", () => {
-	const r = panelLines(["", "head", "row"], { first: true, last: true, fill });
+	const r = panelLines(["", "head", "row"], { first: true, last: true, fill, padX: 0, headerGap: 0 });
 	assert.deepEqual(r.lines, [fill(""), fill("head"), fill("row"), fill("")]);
 	assert.equal(r.shift, 0);
 	assert.equal(r.bottom, true);
 });
 
 test("panelLines: first member without leading blank gets one prepended", () => {
-	const r = panelLines(["head"], { first: true, last: false, fill });
+	const r = panelLines(["head"], { first: true, last: false, fill, padX: 0, headerGap: 0 });
 	assert.deepEqual(r.lines, [fill(""), fill("head")]);
 	assert.equal(r.shift, 1);
 });
 
 test("panelLines: middle member drops leading blanks", () => {
-	const r = panelLines(["", "row", ""], { first: false, last: false, fill });
+	const r = panelLines(["", "row", ""], { first: false, last: false, fill, padX: 0, headerGap: 0 });
 	assert.deepEqual(r.lines, [fill("row"), fill("")]);
 	assert.equal(r.shift, -1);
 });
 
 test("panelLines: empty child stays empty", () => {
-	assert.deepEqual(panelLines([], { first: true, last: true, fill }), { lines: [], shift: 0, bottom: false });
+	assert.deepEqual(panelLines([], { first: true, last: true, fill, padX: 0, headerGap: 0 }), { lines: [], shift: 0, bottom: false, gap: 0 });
+});
+
+test("panelLines: padX indents content, blanks stay blank", () => {
+	const r = panelLines(["", "head"], { first: true, last: true, fill, padX: 2, headerGap: 0 });
+	assert.deepEqual(r.lines, [fill("  "), fill("  head"), fill("")]);
+});
+
+test("panelLines: header gap goes under the first non-blank line of the first member", () => {
+	const r = panelLines(["", "head", "row"], { first: true, last: false, fill, padX: 0, headerGap: 1 });
+	assert.deepEqual(r.lines, [fill(""), fill("head"), fill(""), fill("row")]);
+	assert.equal(r.gapAt, 2);
+	assert.equal(r.gap, 1);
+});
+
+test("panelLines: header gap also applies when a blank is prepended; none for later members", () => {
+	const a = panelLines(["head"], { first: true, last: false, fill, padX: 0, headerGap: 2 });
+	assert.deepEqual(a.lines, [fill(""), fill("head"), fill(""), fill("")]);
+	assert.equal(a.shift, 1);
+	const b = panelLines(["row"], { first: false, last: false, fill, padX: 0, headerGap: 1 });
+	assert.deepEqual(b.lines, [fill("row")]);
+	assert.equal(b.gapAt, undefined);
+});
+
+test("panelLines: defaults are PANEL_PAD_X and PANEL_HEADER_GAP", () => {
+	const r = panelLines(["", "head"], { first: true, last: false, fill });
+	assert.deepEqual(r.lines, [fill(" ".repeat(PANEL_PAD_X)), fill(" ".repeat(PANEL_PAD_X) + "head"), ...Array(PANEL_HEADER_GAP).fill(fill(""))]);
 });
