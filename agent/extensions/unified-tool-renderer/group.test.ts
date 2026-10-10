@@ -248,7 +248,7 @@ test("summarize: mixed with subagent tools", () => {
 
 test("notification joins the open group and is never the anchor", () => {
 	const t = createGroupTracker();
-	t.onAssistantContent([call("a")]);
+	t.onAssistantContent([call("a")], "done");
 	t.onNotification("n1");
 	const g = t.lookupNotification("n1")!;
 	assert.equal(g, t.lookup("a")!.group);
@@ -263,7 +263,7 @@ test("pending notification attaches to the next group", () => {
 	t.onNotification("n1");
 	assert.equal(t.lookupNotification("n1"), undefined);
 	t.onAssistantStart();
-	t.onAssistantContent([call("a", "get_subagent_result")]);
+	t.onAssistantContent([call("a", "get_subagent_result")], "done");
 	const g = t.lookupNotification("n1")!;
 	assert.equal(g, t.lookup("a")!.group);
 	assert.equal(t.lookup("a")!.isAnchor, true);
