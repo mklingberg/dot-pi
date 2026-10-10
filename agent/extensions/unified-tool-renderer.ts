@@ -125,9 +125,17 @@ function stringArg(args: any, ...keys: string[]): string {
 	return "";
 }
 
-function summarizeCall(name: string, args: any, theme: Theme, width: number): string {
-	const arg = stringArg(args, "path", "file_path", "url", "query", "name", "subject", "tool", "description", "prompt", "summary", "question");
-	return theme.fg("accent", oneLine(arg || humanizeToolName(name), width));
+function summarizeCall(_name: string, args: any, theme: Theme, width: number): string {
+	let arg = stringArg(args, "path", "file_path", "url", "query", "name", "subject", "tool", "description", "prompt", "summary", "question");
+	if (!arg) {
+		for (const key of ["questions", "items", "tasks"]) {
+			const first = Array.isArray(args?.[key]) ? args[key][0] : undefined;
+			if (first && typeof first === "object") arg = stringArg(first, "question", "header", "title", "description");
+			else if (typeof first === "string") arg = first.trim();
+			if (arg) break;
+		}
+	}
+	return arg ? theme.fg("accent", oneLine(arg, width)) : "";
 }
 
 function textContent(result: any): string {
@@ -146,7 +154,7 @@ function statusPrefix(theme: Theme, ctx: Ctx): string {
 
 function unifiedCall(name: string): NonNullable<ToolRenderers["renderCall"]> {
 	return (args, theme, context) =>
-		new Lines(`${statusPrefix(theme, context as Ctx)}${theme.fg("text", theme.bold(`${humanizeToolName(name)} `))}${summarizeCall(name, args, theme, Number(settings.summaryWidth))}`);
+		new Lines(`${statusPrefix(theme, context as Ctx)}${theme.fg("text", theme.bold(humanizeToolName(name)))} ${summarizeCall(name, args, theme, Number(settings.summaryWidth))}`.trimEnd());
 }
 
 function unifiedResult(name: string): NonNullable<ToolRenderers["renderResult"]> {
