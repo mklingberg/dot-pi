@@ -42,6 +42,8 @@ interface Settings {
 	headerTools: string[];
 	/** Restyle pi-subagents completion notifications. Registered at load → needs /reload. */
 	notificationTakeover: boolean;
+	/** Render subagent notifications as one line while collapsed (ctrl+o expands). Applies live. */
+	notificationCollapsed: boolean;
 	/** Collapse runs of consecutive tool calls into one Claude-style summary line. New rows only. */
 	grouping: boolean;
 	/** Tools never grouped (they render as before and end the current run). Edit in the JSON file. */
@@ -63,6 +65,7 @@ const DEFAULT_SETTINGS: Settings = {
 	// pi-subagents SUBAGENT_TOOL_NAMES.AGENT and .WORKFLOW
 	headerTools: ["Agent", "SubagentWorkflow"],
 	notificationTakeover: true,
+	notificationCollapsed: true,
 	grouping: true,
 	groupExclude: [...DEFAULT_GROUP_EXCLUDE],
 	dedupeThinking: true,
@@ -86,6 +89,7 @@ function loadSettings(): Settings {
 		if (!WIDTH_VALUES.includes(String(s.summaryWidth))) s.summaryWidth = DEFAULT_SETTINGS.summaryWidth;
 		s.headerTakeover = s.headerTakeover !== false && s.headerTakeover !== "false";
 		s.notificationTakeover = s.notificationTakeover !== false && s.notificationTakeover !== "false";
+		s.notificationCollapsed = s.notificationCollapsed !== false && s.notificationCollapsed !== "false";
 		s.headerTools = Array.isArray(s.headerTools) && s.headerTools.every((t: unknown) => typeof t === "string")
 			? [...s.headerTools]
 			: [...DEFAULT_SETTINGS.headerTools];
@@ -373,6 +377,9 @@ class NotificationView implements Component {
 		if ((d.durationMs ?? 0) > 0) parts.push(`${(d.durationMs! / 1000).toFixed(1)}s`);
 		let header = `${theme.fg(color, BULLET)}${theme.bold(d.description ?? "Agent")} ${theme.fg("dim", statusText)}`;
 		if (parts.length) header += theme.fg("dim", ` · ${parts.join(" · ")}`);
+		if (!this.expanded && settings.notificationCollapsed) {
+			return [truncateToWidth(header + theme.fg("dim", " · ctrl+o to expand"), w, "…")];
+		}
 		const lines = [truncateToWidth(header, w, "…")];
 
 		const raw = (d.resultPreview ?? "").replace(/\r\n?/g, "\n").replace(/\t/g, "  ").trimEnd();
@@ -653,6 +660,8 @@ export default function (pi: ExtensionAPI): void {
 				description: "Use the unified header for selected tools but keep their own result. Tool list: headerTools in unified-tool-renderer.json. New rows only" },
 			{ id: "notificationTakeover", label: "Notification takeover", currentValue: settings.notificationTakeover ? "true" : "false", values: ["true", "false"],
 				description: "Restyle pi-subagents completion notifications in the unified tree look. Registered at load: needs /reload to take effect" },
+			{ id: "notificationCollapsed", label: "Collapse agent notifications", currentValue: settings.notificationCollapsed ? "true" : "false", values: ["true", "false"],
+				description: "One line per subagent completion notification; expand to see result + transcript" },
 			{ id: "grouping", label: "Grouping", currentValue: settings.grouping ? "true" : "false", values: ["true", "false"],
 				description: "Collapse consecutive tool calls into one summary line (click or ctrl+o to expand). Excluded tools: groupExclude in unified-tool-renderer.json. New rows only" },
 			{ id: "dedupeThinking", label: "Dedupe thinking labels", currentValue: settings.dedupeThinking ? "true" : "false", values: ["true", "false"],
@@ -679,6 +688,7 @@ export default function (pi: ExtensionAPI): void {
 					if (id === "enabled") settings.enabled = value === "true";
 					else if (id === "headerTakeover") settings.headerTakeover = value === "true";
 					else if (id === "notificationTakeover") settings.notificationTakeover = value === "true";
+					else if (id === "notificationCollapsed") settings.notificationCollapsed = value === "true";
 					else if (id === "grouping") settings.grouping = value === "true";
 					else if (id === "dedupeThinking") settings.dedupeThinking = value === "true";
 					else if (id === "collapsed") settings.collapsed = value as CollapsedMode;
