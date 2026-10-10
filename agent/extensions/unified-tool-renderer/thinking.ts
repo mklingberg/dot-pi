@@ -59,3 +59,67 @@ export function dedupeThinkingRuns(children: DedupeChild[]): string[][] {
 		return out;
 	});
 }
+
+// ---------------------------------------------------------------------------
+// Pi-facing part: patch Container.prototype.render (type-only Pi imports).
+// ---------------------------------------------------------------------------
+
+const PATCH_KEY = Symbol.for("unified-tool-renderer.thinking-dedupe");
+
+interface PatchState {
+	original: (width: number) => string[];
+	patched: (width: number) => string[];
+	owner: object;
+}
+
+export function installThinkingDedupe(
+	pi: import("@earendil-works/pi-coding-agent").ExtensionAPI,
+	AssistantMessageComponent: abstract new (...args: any[]) => any,
+	isEnabled: () => boolean,
+): void {
+	const proto: any = Object.getPrototypeOf((AssistantMessageComponent as any).prototype);
+	if (!proto || typeof proto.render !== "function") return;
+
+	// Reload-safe: remove a previous install before patching.
+	const previous: PatchState | undefined = proto[PATCH_KEY];
+	if (previous && proto.render === previous.patched) proto.render = previous.original;
+	const original: (width: number) => string[] = proto.render;
+	const owner = {};
+
+	const patched = function (this: any, width: number): string[] {
+		let enabled = false;
+		try {
+			enabled = isEnabled() && Array.isArray(this.children) && this.children.some((c: any) => c instanceof AssistantMessageComponent);
+		} catch {}
+		if (!enabled) return original.call(this, width);
+		try {
+			const children: any[] = this.children;
+			const rendered = children.map((child) => {
+				const lines: string[] = child.render(width);
+				const label = child instanceof AssistantMessageComponent ? String(child.hiddenThinkingLabel ?? "Thinking...") : undefined;
+				return { lines, label };
+			});
+			const deduped = dedupeThinkingRuns(rendered);
+			const out: string[] = [];
+			const mouseChildren = deduped.map((lines, i) => {
+				for (const line of lines) out.push(line);
+				return { component: children[i], height: lines.length };
+			});
+			this.mouseLayout = { width, children: mouseChildren };
+			return out;
+		} catch {
+			return original.call(this, width);
+		}
+	};
+
+	proto.render = patched;
+	proto[PATCH_KEY] = { original, patched, owner } satisfies PatchState;
+
+	pi.on("session_shutdown", () => {
+		const state: PatchState | undefined = proto[PATCH_KEY];
+		if (state && state.owner === owner && proto.render === state.patched) {
+			proto.render = state.original;
+			delete proto[PATCH_KEY];
+		}
+	});
+}

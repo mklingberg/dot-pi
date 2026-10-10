@@ -18,9 +18,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
-import { getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, type SettingItem, SettingsList, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
+import { installThinkingDedupe } from "./thinking.ts";
 import { createGroupTracker, DEFAULT_GROUP_EXCLUDE, summarize, type ToolGroup } from "./group.ts";
 
 const BULLET = "● ";
@@ -45,6 +46,8 @@ interface Settings {
 	grouping: boolean;
 	/** Tools never grouped (they render as before and end the current run). Edit in the JSON file. */
 	groupExclude: string[];
+	/** Collapse consecutive hidden-thinking labels to one per run. Applies live. */
+	dedupeThinking: boolean;
 }
 
 const COLLAPSED_MODES: CollapsedMode[] = ["count", "first-line", "hidden"];
@@ -62,6 +65,7 @@ const DEFAULT_SETTINGS: Settings = {
 	notificationTakeover: true,
 	grouping: true,
 	groupExclude: [...DEFAULT_GROUP_EXCLUDE],
+	dedupeThinking: true,
 };
 
 function settingsPath(): string {
@@ -89,6 +93,7 @@ function loadSettings(): Settings {
 		s.groupExclude = Array.isArray(s.groupExclude) && s.groupExclude.every((t: unknown) => typeof t === "string")
 			? [...s.groupExclude]
 			: [...DEFAULT_GROUP_EXCLUDE];
+		s.dedupeThinking = s.dedupeThinking !== false && s.dedupeThinking !== "false";
 		s.previewLines = String(s.previewLines);
 		s.summaryWidth = String(s.summaryWidth);
 		return s;
@@ -540,6 +545,8 @@ function resolveBase(name: string, base: ToolRenderers | undefined): ToolRendere
 }
 
 export default function (pi: ExtensionAPI): void {
+	installThinkingDedupe(pi, AssistantMessageComponent, () => settings.dedupeThinking);
+
 	pi.registerToolRenderer((name, next) => {
 		const base = next();
 		// Pi caches the resolved definition per tool row at construction, so
@@ -648,6 +655,8 @@ export default function (pi: ExtensionAPI): void {
 				description: "Restyle pi-subagents completion notifications in the unified tree look. Registered at load: needs /reload to take effect" },
 			{ id: "grouping", label: "Grouping", currentValue: settings.grouping ? "true" : "false", values: ["true", "false"],
 				description: "Collapse consecutive tool calls into one summary line (click or ctrl+o to expand). Excluded tools: groupExclude in unified-tool-renderer.json. New rows only" },
+			{ id: "dedupeThinking", label: "Dedupe thinking labels", currentValue: settings.dedupeThinking ? "true" : "false", values: ["true", "false"],
+				description: "One 'Thinking...' per run of hidden thinking. Applies live" },
 			{ id: "previewLines", label: "Preview lines", currentValue: settings.previewLines, values: PREVIEW_VALUES,
 				description: "Lines shown in expanded multi-line results" },
 			{ id: "collapsed", label: "Collapsed results", currentValue: settings.collapsed, values: [...COLLAPSED_MODES],
@@ -671,6 +680,7 @@ export default function (pi: ExtensionAPI): void {
 					else if (id === "headerTakeover") settings.headerTakeover = value === "true";
 					else if (id === "notificationTakeover") settings.notificationTakeover = value === "true";
 					else if (id === "grouping") settings.grouping = value === "true";
+					else if (id === "dedupeThinking") settings.dedupeThinking = value === "true";
 					else if (id === "collapsed") settings.collapsed = value as CollapsedMode;
 					else if (id === "previewLines") settings.previewLines = value;
 					else if (id === "summaryWidth") settings.summaryWidth = value;
