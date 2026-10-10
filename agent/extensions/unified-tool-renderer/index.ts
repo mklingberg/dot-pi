@@ -22,7 +22,7 @@ import { AssistantMessageComponent, getAgentDir, getSettingsListTheme } from "@e
 import { type Component, Container, type SettingItem, SettingsList, type TuiMouseEvent, type TuiMouseEventResult, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import { installThinkingDedupe } from "./thinking.ts";
-import { createGroupTracker, DEFAULT_GROUP_EXCLUDE, leadingNoticeKey, summarize, syncExpandEdge, type ToolGroup } from "./group.ts";
+import { createGroupTracker, DEFAULT_GROUP_EXCLUDE, leadingNoticeKey, summarize, rowExpanded, syncExpandEdge, toggleFlip, type ToolGroup } from "./group.ts";
 
 const BULLET = "● ";
 const TREE_LAST = "  └─ ";
@@ -351,12 +351,11 @@ class NotificationView implements Component {
 	/** Left-click: toggle the whole group, or (standalone) this notification's own view. */
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.type !== "click" || event.button !== "left") return undefined;
-		const group = this.key && settings.grouping ? this.tracker.lookupNotification(this.key) : undefined;
-		if (group) {
-			toggleGroup(this.st, group);
-		} else if (this.key) {
-			if (!this.st.flipped.delete(this.key)) this.st.flipped.add(this.key);
-		} else return undefined;
+		if (!this.key) return undefined;
+		const group = settings.grouping ? this.tracker.lookupNotification(this.key) : undefined;
+		// The group summary header (leading notification, first line) toggles the group; every other line only this notification.
+		if (group && event.y === 0 && leadingNoticeKey(group) === this.key) toggleGroup(this.st, group);
+		else toggleFlip(this.st.flipped, this.key);
 		return { handled: true };
 	}
 	render(width: number): string[] {
@@ -364,7 +363,7 @@ class NotificationView implements Component {
 		// Read tracker state at render time: the group may form after this component was built.
 		const group = this.key && settings.grouping ? this.tracker.lookupNotification(this.key) : undefined;
 		if (group && !group.expanded) return [];
-		const expanded = group ? group.expanded : this.expanded !== Boolean(this.key && this.st.flipped.has(this.key));
+		const expanded = rowExpanded(this.expanded, this.st.flipped, this.key);
 		const showCost = readShowCost();
 		const all = [this.details, ...(this.details.others ?? [])];
 		const out: string[] = [];
@@ -440,7 +439,7 @@ interface GroupState {
 	innerRows: Map<string, { call?: Component; result?: Component }>;
 	/** Last seen ctx.expanded per tool row (edge detection for group expand). */
 	seenExpanded: Map<string, boolean>;
-	/** Standalone notifications whose expand state was flipped by a click (XOR with Pi's global state). */
+	/** Rows / notifications whose expand state was flipped by a click (XOR with Pi's global state). */
 	flipped: Set<string>;
 }
 const MAX_INVALIDATORS = 512;
@@ -478,13 +477,14 @@ function toggleGroup(st: GroupState, group: ToolGroup): void {
 }
 
 /**
- * Left-click anywhere on a group member toggles the whole group. Pi wraps each
- * row component in a MouseRegion that asks the child first, so handling it here
- * pre-empts Pi's per-row toggle: a row's own `expanded` then only changes via
- * global ctrl+o, which keeps group.expanded and the rows from drifting apart.
+ * Intercepts left-clicks on a group row. Pi wraps each row component in a
+ * MouseRegion that asks the child first, so handling it here pre-empts Pi's
+ * per-row toggle: a row's own `ctx.expanded` then only changes via global
+ * ctrl+o, which keeps syncExpandEdge a clean ctrl+o signal. The handler
+ * decides (by event.y) between toggling the group and toggling just the row.
  */
 class GroupClick implements Component {
-	constructor(private readonly inner: Component, private readonly onToggle: () => void) {}
+	constructor(private readonly inner: Component, private readonly onClick: (event: TuiMouseEvent) => void) {}
 	invalidate(): void {
 		this.inner.invalidate();
 	}
@@ -493,7 +493,7 @@ class GroupClick implements Component {
 	}
 	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.type !== "click" || event.button !== "left") return undefined;
-		this.onToggle();
+		this.onClick(event);
 		return { handled: true };
 	}
 }
@@ -523,7 +523,7 @@ function groupedRenderers(st: GroupState, name: string, inner: ToolRenderers): T
 
 	// Decided on every render (never cached): rows can be built before the
 	// message_update handler assigned them to a group.
-	const sync = (ctx: any): { group: ToolGroup; isAnchor: boolean; show: boolean } | undefined => {
+	const sync = (ctx: any): { group: ToolGroup; isAnchor: boolean; show: boolean; rowId: string; rowExp: boolean } | undefined => {
 		const id = String(ctx?.toolCallId ?? "");
 		if (!id) return undefined;
 		rememberInvalidator(st, id, ctx?.invalidate);
@@ -531,8 +531,8 @@ function groupedRenderers(st: GroupState, name: string, inner: ToolRenderers): T
 		if (!found) return undefined;
 		// Edge-triggered: a row's own click / global ctrl+o drives group.expanded;
 		// group.expanded is then the single source of truth for every member.
-		if (syncExpandEdge(found.group, st.seenExpanded, id, Boolean(ctx?.expanded))) notifyGroup(st, found.group, id);
-		return { ...found, show: found.group.expanded };
+		if (syncExpandEdge(found.group, st.seenExpanded, id, Boolean(ctx?.expanded), 512, st.flipped)) notifyGroup(st, found.group, id);
+		return { ...found, show: found.group.expanded, rowId: id, rowExp: rowExpanded(Boolean(ctx?.expanded), st.flipped, id) };
 	};
 
 	// Pi hands back whatever we returned as context.lastComponent; inner
@@ -549,9 +549,9 @@ function groupedRenderers(st: GroupState, name: string, inner: ToolRenderers): T
 		}
 		return rec;
 	};
-	const runInner = (slot: "call" | "result", fn: ((...a: any[]) => Component) | undefined, ctx: any, call: (c: any) => Component): Component => {
+	const runInner = (slot: "call" | "result", fn: ((...a: any[]) => Component) | undefined, ctx: any, call: (c: any) => Component, expanded?: boolean): Component => {
 		const rec = innerRecord(ctx);
-		const clean = { ...ctx, lastComponent: rec?.[slot] };
+		const clean = { ...ctx, lastComponent: rec?.[slot], ...(expanded === undefined ? {} : { expanded }) };
 		const out = call(clean);
 		if (rec) rec[slot] = out;
 		return out;
@@ -561,28 +561,39 @@ function groupedRenderers(st: GroupState, name: string, inner: ToolRenderers): T
 		...inner,
 		renderShell: "self",
 		renderCall: (args, theme, context) => {
+			let rowExp: boolean | undefined;
 			const run = () =>
-				runInner("call", inner.renderCall as any, context, (c) => (inner.renderCall ?? unifiedCall(name))(args, theme, c));
+				runInner("call", inner.renderCall as any, context, (c) => (inner.renderCall ?? unifiedCall(name))(args, theme, c), rowExp);
 			try {
 				const g = sync(context);
 				if (!g) return wrapBase(run(), context);
-				const click = (c: Component): Component => new GroupClick(c, () => toggleGroup(st, g.group));
-				if (!g.show) return g.isAnchor ? click(new Lines(summaryLine(g.group, theme, true))) : empty();
+				const toggleRow = () => {
+					toggleFlip(st.flipped, g.rowId);
+					notify(st, g.rowId);
+				};
+				if (!g.show) return g.isAnchor ? new GroupClick(new Lines(summaryLine(g.group, theme, true)), () => toggleGroup(st, g.group)) : empty();
+				rowExp = g.rowExp;
 				const base = wrapBase(run(), context);
-				if (!g.isAnchor || leadingNoticeKey(g.group) !== undefined) return click(base); // header lives on the leading notification
-				return click(new Stack([new Lines(summaryLine(g.group, theme, false)), base]));
+				if (!g.isAnchor || leadingNoticeKey(g.group) !== undefined) return new GroupClick(base, toggleRow); // header lives on the leading notification
+				// Line 0 is the group summary header; the rest is this row's own call line(s).
+				return new GroupClick(new Stack([new Lines(summaryLine(g.group, theme, false)), base]), (e) => (e.y === 0 ? toggleGroup(st, g.group) : toggleRow()));
 			} catch {
 				return wrapBase((inner.renderCall ?? unifiedCall(name))(args, theme, { ...context, lastComponent: undefined } as any), context);
 			}
 		},
 		renderResult: (result, options, theme, context) => {
+			let rowExp: boolean | undefined;
 			const run = () =>
-				runInner("result", inner.renderResult as any, context, (c) => (inner.renderResult ?? unifiedResult(name))(result, options, theme, c));
+				runInner("result", inner.renderResult as any, context, (c) => (inner.renderResult ?? unifiedResult(name))(result, rowExp === undefined ? options : { ...options, expanded: rowExp }, theme, c), rowExp);
 			try {
 				const g = sync(context);
 				if (!g) return wrapBase(run(), context);
 				if (!g.show) return empty();
-				return new GroupClick(wrapBase(run(), context), () => toggleGroup(st, g.group));
+				rowExp = g.rowExp;
+				return new GroupClick(wrapBase(run(), context), () => {
+					toggleFlip(st.flipped, g.rowId);
+					notify(st, g.rowId);
+				});
 			} catch {
 				return wrapBase((inner.renderResult ?? unifiedResult(name))(result, options, theme, { ...context, lastComponent: undefined } as any), context);
 			}
