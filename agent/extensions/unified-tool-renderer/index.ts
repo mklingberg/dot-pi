@@ -368,7 +368,7 @@ class NotificationView implements Component {
 		const all = [this.details, ...(this.details.others ?? [])];
 		const out: string[] = [];
 		// Expanded group whose first member is this notification: it carries the summary header.
-		if (group?.expanded && this.key && leadingNoticeKey(group) === this.key) out.push(truncateToWidth(summaryLine(group, this.theme, false), w, "…"));
+		if (group?.expanded && this.key && leadingNoticeKey(group) === this.key) out.push(truncateToWidth(summaryLine(group, this.theme, true), w, "…"));
 		if (showCost && all.length > 1) {
 			const total = fmtCost(all.reduce((sum, a) => sum + (a.totalCost ?? 0), 0));
 			if (total) {
@@ -514,7 +514,7 @@ function summaryLine(group: ToolGroup, theme: Theme, hint: boolean): string {
 	const running = group.items.some((i) => i.status === "running");
 	const failed = group.items.some((i) => i.status === "error");
 	const bullet = theme.fg(running ? "warning" : failed ? "error" : "success", BULLET);
-	return `${bullet}${theme.fg("muted", summarize(group.items, group.notices))}${hint ? theme.fg("dim", " · click to expand") : ""}`;
+	return `${bullet}${theme.fg("muted", summarize(group.items, group.notices))}${hint ? theme.fg("dim", group.expanded ? " · click to collapse" : " · click to expand") : ""}`;
 }
 
 function groupedRenderers(st: GroupState, name: string, inner: ToolRenderers): ToolRenderers {
@@ -576,7 +576,7 @@ function groupedRenderers(st: GroupState, name: string, inner: ToolRenderers): T
 				const base = wrapBase(run(), context);
 				if (!g.isAnchor || leadingNoticeKey(g.group) !== undefined) return new GroupClick(base, toggleRow); // header lives on the leading notification
 				// Line 0 is the group summary header; the rest is this row's own call line(s).
-				return new GroupClick(new Stack([new Lines(summaryLine(g.group, theme, false)), base]), (e) => (e.y === 0 ? toggleGroup(st, g.group) : toggleRow()));
+				return new GroupClick(new Stack([new Lines(summaryLine(g.group, theme, true)), base]), (e) => (e.y === 0 ? toggleGroup(st, g.group) : toggleRow()));
 			} catch {
 				return wrapBase((inner.renderCall ?? unifiedCall(name))(args, theme, { ...context, lastComponent: undefined } as any), context);
 			}
