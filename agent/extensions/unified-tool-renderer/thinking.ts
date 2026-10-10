@@ -22,6 +22,13 @@ export function dedupeThinkingRuns(children: DedupeChild[]): string[][] {
 	// Kind of the last child that produced non-blank output.
 	let prevKind: DedupeChild["kind"] = "other";
 	return children.map((child) => {
+		// A custom message whose output is only blank lines (e.g. a notification in a collapsed
+		// group renders 0 lines, leaving just Pi's own leading Spacer) renders as nothing, so a
+		// collapsed group looks exactly like one without a notification. Applies whenever the
+		// patch is active; custom children with any visible content are untouched.
+		if (child.label === undefined && child.kind === "custom" && child.lines.every((l) => strip(l).trim() === "")) {
+			return [];
+		}
 		if (child.label === undefined) {
 			if (child.lines.some((l) => strip(l).trim() !== "")) {
 				inRun = false;

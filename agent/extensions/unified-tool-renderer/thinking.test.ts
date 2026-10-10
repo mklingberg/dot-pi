@@ -121,3 +121,20 @@ test("dropped duplicate label leaves no stray blanks and run tracking holds", ()
 	const out = dedupeThinkingRuns([tool([row]), asst([blank(), label()]), asst([blank(), label()]), asst([blank(), label(), blank(), text("t")])]);
 	assert.deepEqual(out, [[row], [label()], [], [blank(), text("t")]]);
 });
+
+test("blank-only custom child renders as no lines", () => {
+	assert.deepEqual(dedupeThinkingRuns([{ lines: ["", ""], kind: "custom" }]), [[]]);
+});
+
+test("custom child with visible content is unchanged", () => {
+	assert.deepEqual(dedupeThinkingRuns([{ lines: ["", "● notice…"], kind: "custom" }]), [["", "● notice…"]]);
+});
+
+test("label flush under tool even past a dropped blank-only custom child", () => {
+	const out = dedupeThinkingRuns([
+		{ lines: ["tool"], kind: "tool" },
+		{ lines: [""], kind: "custom" },
+		{ lines: ["", "Thinking..."], label: "Thinking...", kind: "assistant" },
+	]);
+	assert.deepEqual(out, [["tool"], [], ["Thinking..."]]);
+});
