@@ -10,7 +10,9 @@ const item = (toolName: string, status: GroupItem["status"] = "done", args: any 
 });
 
 test("default exclude list", () => {
-	assert.deepEqual(DEFAULT_GROUP_EXCLUDE, ["edit", "write", "Agent", "SubagentWorkflow", "ask_user_question"]);
+	assert.deepEqual(DEFAULT_GROUP_EXCLUDE, ["edit", "write", "ask_user_question"]);
+	assert.ok(!DEFAULT_GROUP_EXCLUDE.includes("Agent"));
+	assert.ok(!DEFAULT_GROUP_EXCLUDE.includes("SubagentWorkflow"));
 });
 
 const call = (id: string, name = "read", args: any = {}) => ({ type: "toolCall", id, name, arguments: args });
@@ -212,4 +214,34 @@ test("summarize: running uses progressive tense", () => {
 
 test("summarize: failures appended", () => {
 	assert.equal(summarize([item("read"), item("read", "error")]), "Read 2 files (1 failed)");
+});
+
+test("Agent joins the group instead of closing it", () => {
+	const t = createGroupTracker();
+	t.onAssistantContent([call("a"), call("b", "Agent"), call("c", "grep")]);
+	assert.deepEqual(ids(t, "a"), ["a", "b", "c"]);
+	assert.equal(t.lookup("b")!.isAnchor, false);
+});
+
+test("summarize: subagent tools", () => {
+	assert.equal(summarize([item("Agent")]), "Spawned 1 agent");
+	assert.equal(summarize([item("Agent"), item("Agent")]), "Spawned 2 agents");
+	assert.equal(summarize([item("SubagentWorkflow")]), "Ran 1 workflow");
+	assert.equal(summarize([item("SubagentWorkflow"), item("SubagentWorkflow")]), "Ran 2 workflows");
+	assert.equal(summarize([item("get_subagent_result")]), "Checked 1 agent");
+	assert.equal(summarize([item("get_subagent_result"), item("get_subagent_result")]), "Checked 2 agents");
+	assert.equal(summarize([item("steer_subagent")]), "Steered 1 agent");
+	assert.equal(summarize([item("steer_subagent"), item("steer_subagent")]), "Steered 2 agents");
+});
+
+test("summarize: subagent tools progressive tense", () => {
+	assert.equal(summarize([item("Agent", "running")]), "Spawning 1 agent…");
+	assert.equal(summarize([item("SubagentWorkflow", "running")]), "Running 1 workflow…");
+	assert.equal(summarize([item("get_subagent_result", "running")]), "Checking 1 agent…");
+	assert.equal(summarize([item("steer_subagent", "running"), item("steer_subagent")]), "Steering 2 agents…");
+});
+
+test("summarize: mixed with subagent tools", () => {
+	assert.equal(summarize([item("read"), item("Agent"), item("read")]), "Read 2 files, spawned 1 agent");
+	assert.equal(summarize([item("Agent", "error"), item("bash")]), "Spawned 1 agent, ran 1 command (1 failed)");
 });

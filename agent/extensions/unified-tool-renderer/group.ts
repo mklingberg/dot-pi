@@ -4,7 +4,7 @@
  * No Pi / pi-tui imports — keep render code elsewhere.
  */
 
-export const DEFAULT_GROUP_EXCLUDE: string[] = ["edit", "write", "Agent", "SubagentWorkflow", "ask_user_question"];
+export const DEFAULT_GROUP_EXCLUDE: string[] = ["edit", "write", "ask_user_question"];
 
 export type ItemStatus = "running" | "done" | "error";
 
@@ -173,7 +173,7 @@ export function createGroupTracker(options: GroupTrackerOptions = {}): GroupTrac
 	};
 }
 
-type Kind = "read" | "search" | "list" | "bash" | "batch" | "mcp" | "other";
+type Kind = "read" | "search" | "list" | "bash" | "batch" | "mcp" | "agent" | "workflow" | "agentResult" | "steer" | "other";
 
 const PHRASES: Record<Kind, { past: [string, string]; ing: [string, string] }> = {
 	read: { past: ["read", "file"], ing: ["reading", "file"] },
@@ -182,6 +182,10 @@ const PHRASES: Record<Kind, { past: [string, string]; ing: [string, string] }> =
 	bash: { past: ["ran", "command"], ing: ["running", "command"] },
 	batch: { past: ["ran", "batched call"], ing: ["running", "batched call"] },
 	mcp: { past: ["called", "MCP tool"], ing: ["calling", "MCP tool"] },
+	agent: { past: ["spawned", "agent"], ing: ["spawning", "agent"] },
+	workflow: { past: ["ran", "workflow"], ing: ["running", "workflow"] },
+	agentResult: { past: ["checked", "agent"], ing: ["checking", "agent"] },
+	steer: { past: ["steered", "agent"], ing: ["steering", "agent"] },
 	other: { past: ["used", "tool"], ing: ["using", "tool"] },
 };
 
@@ -193,6 +197,10 @@ function kindOf(name: string): Kind {
 		case "ls": return "list";
 		case "bash": return "bash";
 		case "tool_batch": return "batch";
+		case "Agent": return "agent";
+		case "SubagentWorkflow": return "workflow";
+		case "get_subagent_result": return "agentResult";
+		case "steer_subagent": return "steer";
 	}
 	const lower = name.toLowerCase();
 	if (lower.includes("mcp") || name.includes("__")) return "mcp";
