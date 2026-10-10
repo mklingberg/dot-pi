@@ -19,7 +19,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
-import { Container, type SettingItem, SettingsList, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { type Component, Container, type SettingItem, SettingsList, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 const BULLET = "● ";
 const TREE_LAST = "  └─ ";
@@ -33,6 +33,10 @@ interface Settings {
 	previewLines: string;
 	collapsed: CollapsedMode;
 	summaryWidth: string;
+	/** Master switch for the header takeover feature. */
+	headerTakeover: boolean;
+	/** Tools whose renderCall is replaced by ours (their renderResult is kept). Edit in the JSON file. */
+	headerTools: string[];
 }
 
 const COLLAPSED_MODES: CollapsedMode[] = ["count", "first-line", "hidden"];
@@ -44,6 +48,9 @@ const DEFAULT_SETTINGS: Settings = {
 	previewLines: "80",
 	collapsed: "count",
 	summaryWidth: "72",
+	headerTakeover: true,
+	// pi-subagents SUBAGENT_TOOL_NAMES.AGENT and .WORKFLOW
+	headerTools: ["Agent", "SubagentWorkflow"],
 };
 
 function settingsPath(): string {
@@ -62,11 +69,15 @@ function loadSettings(): Settings {
 		if (!COLLAPSED_MODES.includes(s.collapsed)) s.collapsed = DEFAULT_SETTINGS.collapsed;
 		if (!PREVIEW_VALUES.includes(String(s.previewLines))) s.previewLines = DEFAULT_SETTINGS.previewLines;
 		if (!WIDTH_VALUES.includes(String(s.summaryWidth))) s.summaryWidth = DEFAULT_SETTINGS.summaryWidth;
+		s.headerTakeover = s.headerTakeover !== false && s.headerTakeover !== "false";
+		s.headerTools = Array.isArray(s.headerTools) && s.headerTools.every((t: unknown) => typeof t === "string")
+			? [...s.headerTools]
+			: [...DEFAULT_SETTINGS.headerTools];
 		s.previewLines = String(s.previewLines);
 		s.summaryWidth = String(s.summaryWidth);
 		return s;
 	} catch {
-		return { ...DEFAULT_SETTINGS };
+		return { ...DEFAULT_SETTINGS, headerTools: [...DEFAULT_SETTINGS.headerTools] };
 	}
 }
 
@@ -152,9 +163,45 @@ function statusPrefix(theme: Theme, ctx: Ctx): string {
 	return theme.fg(ctx?.isError ? "error" : "success", BULLET);
 }
 
+// Per-tool overrides for the header title / summary (otherwise generic).
+const HEADER_OVERRIDES: Record<string, { title?: (args: any) => string; summary?: (args: any) => string }> = {
+	Agent: {
+		title: (args) => stringArg(args, "subagent_type"),
+		summary: (args) => stringArg(args, "description"),
+	},
+};
+
 function unifiedCall(name: string): NonNullable<ToolRenderers["renderCall"]> {
-	return (args, theme, context) =>
-		new Lines(`${statusPrefix(theme, context as Ctx)}${theme.fg("text", theme.bold(humanizeToolName(name)))} ${summarizeCall(name, args, theme, Number(settings.summaryWidth))}`.trimEnd());
+	return (args, theme, context) => {
+		const override = HEADER_OVERRIDES[name];
+		const title = override?.title?.(args) || humanizeToolName(name);
+		const custom = override?.summary?.(args);
+		const summary = custom ? theme.fg("accent", oneLine(custom, Number(settings.summaryWidth))) : summarizeCall(name, args, theme, Number(settings.summaryWidth));
+		return new Lines(`${statusPrefix(theme, context as Ctx)}${theme.fg("text", theme.bold(title))} ${summary}`.trimEnd());
+	};
+}
+
+/**
+ * Wraps a foreign result component: lines whose visible text starts with a
+ * non-space get a 2-space indent (rendered at width-2). Already-indented and
+ * blank lines are left alone. Delegates every render so live updates work.
+ */
+class IndentResult implements Component {
+	constructor(private readonly inner: Component) {}
+	invalidate(): void {
+		this.inner.invalidate();
+	}
+	render(width: number): string[] {
+		const lines = this.inner.render(Math.max(1, width - 2));
+		return lines.map((line) => {
+			const visible = line.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "");
+			return visible.length > 0 && !/^\s/.test(visible) ? `  ${line}` : line;
+		});
+	}
+}
+
+function takeoverResult(inner: NonNullable<ToolRenderers["renderResult"]>): NonNullable<ToolRenderers["renderResult"]> {
+	return (result, options, theme, context) => new IndentResult(inner(result, options, theme, context));
 }
 
 function unifiedResult(name: string): NonNullable<ToolRenderers["renderResult"]> {
@@ -190,6 +237,14 @@ export default function (pi: ExtensionAPI): void {
 		// Pi caches the resolved definition per tool row at construction, so
 		// toggling "enabled" only affects rows created afterwards.
 		if (!settings.enabled) return base;
+		if (settings.headerTakeover && settings.headerTools.includes(name) && base?.renderCall && base?.renderResult) {
+			return {
+				...base,
+				renderShell: "self",
+				renderCall: unifiedCall(name),
+				renderResult: takeoverResult(base.renderResult),
+			};
+		}
 		if (base?.renderCall && base?.renderResult) return base;
 		const covered = Boolean(base?.renderCall || base?.renderResult);
 		return {
@@ -205,6 +260,8 @@ export default function (pi: ExtensionAPI): void {
 		const items: SettingItem[] = [
 			{ id: "enabled", label: "Enabled", currentValue: settings.enabled ? "true" : "false", values: ["true", "false"],
 				description: "false falls back to Pi's default rendering — applies to new tool rows only (Pi caches renderers per row)" },
+			{ id: "headerTakeover", label: "Header takeover", currentValue: settings.headerTakeover ? "true" : "false", values: ["true", "false"],
+				description: "Use the unified header for selected tools but keep their own result. Tool list: headerTools in unified-tool-renderer.json. New rows only" },
 			{ id: "previewLines", label: "Preview lines", currentValue: settings.previewLines, values: PREVIEW_VALUES,
 				description: "Lines shown in expanded multi-line results" },
 			{ id: "collapsed", label: "Collapsed results", currentValue: settings.collapsed, values: [...COLLAPSED_MODES],
@@ -225,6 +282,7 @@ export default function (pi: ExtensionAPI): void {
 				getSettingsListTheme(),
 				(id, value) => {
 					if (id === "enabled") settings.enabled = value === "true";
+					else if (id === "headerTakeover") settings.headerTakeover = value === "true";
 					else if (id === "collapsed") settings.collapsed = value as CollapsedMode;
 					else if (id === "previewLines") settings.previewLines = value;
 					else if (id === "summaryWidth") settings.summaryWidth = value;
