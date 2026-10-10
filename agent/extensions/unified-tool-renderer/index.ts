@@ -344,12 +344,13 @@ class NotificationView implements Component {
 		private readonly expanded: boolean,
 		private readonly theme: Theme,
 		private readonly key: string | undefined,
+		private readonly tracker: GroupTracker,
 	) {}
 	invalidate(): void {}
 	render(width: number): string[] {
 		const w = Math.max(1, width);
 		// Read tracker state at render time: the group may form after this component was built.
-		const group = this.key && settings.grouping ? tracker.lookupNotification(this.key) : undefined;
+		const group = this.key && settings.grouping ? this.tracker.lookupNotification(this.key) : undefined;
 		if (group && !this.expanded && !group.expanded) return [];
 		const expanded = this.expanded || Boolean(group?.expanded);
 		const showCost = readShowCost();
@@ -416,21 +417,33 @@ function noticeKey(message: any): string | undefined {
 
 // ---- grouping (Claude Code style summary of consecutive tool calls) ----
 
-const tracker = createGroupTracker({ exclude: settings.groupExclude });
-const invalidators = new Map<string, () => void>();
+// Grouping state is PER EXTENSION INSTANCE (created in the factory), never
+// module-level: pi-subagents runs subagent sessions in-process and Pi reuses
+// the cached module, so module state would be shared with (and clobbered by)
+// the subagent's instance.
+type GroupTracker = ReturnType<typeof createGroupTracker>;
+interface GroupState {
+	tracker: GroupTracker;
+	invalidators: Map<string, () => void>;
+	innerRows: Map<string, { call?: Component; result?: Component }>;
+}
 const MAX_INVALIDATORS = 512;
-const innerRows = new Map<string, { call?: Component; result?: Component }>();
 
-function rememberInvalidator(id: string, fn: unknown): void {
+function createGroupState(): GroupState {
+	return { tracker: createGroupTracker({ exclude: settings.groupExclude }), invalidators: new Map(), innerRows: new Map() };
+}
+
+function rememberInvalidator(st: GroupState, id: string, fn: unknown): void {
 	if (typeof fn !== "function") return;
+	const { invalidators } = st;
 	invalidators.delete(id);
 	invalidators.set(id, fn as () => void);
 	while (invalidators.size > MAX_INVALIDATORS) invalidators.delete(invalidators.keys().next().value!);
 }
 
-function notify(id: string | undefined): void {
+function notify(st: GroupState, id: string | undefined): void {
 	if (!id) return;
-	const fn = invalidators.get(id);
+	const fn = st.invalidators.get(id);
 	if (!fn) return;
 	queueMicrotask(() => {
 		try {
@@ -439,8 +452,8 @@ function notify(id: string | undefined): void {
 	});
 }
 
-function notifyGroup(group: ToolGroup, exceptId?: string): void {
-	for (const item of group.items) if (item.id !== exceptId) notify(item.id);
+function notifyGroup(st: GroupState, group: ToolGroup, exceptId?: string): void {
+	for (const item of group.items) if (item.id !== exceptId) notify(st, item.id);
 }
 
 /** Adds the outputPad horizontal indent that Pi's default shell would have drawn. */
@@ -462,7 +475,7 @@ function summaryLine(group: ToolGroup, theme: Theme, hint: boolean): string {
 	return `${bullet}${theme.fg("muted", summarize(group.items, group.notices))}${hint ? theme.fg("dim", " · click to expand") : ""}`;
 }
 
-function groupedRenderers(name: string, inner: ToolRenderers): ToolRenderers {
+function groupedRenderers(st: GroupState, name: string, inner: ToolRenderers): ToolRenderers {
 	const selfShell = inner.renderShell === "self";
 	const wrapBase = (c: Component, ctx: any): Component => (selfShell ? c : new PadLines(c, Number(ctx?.outputPad ?? 1)));
 
@@ -471,12 +484,12 @@ function groupedRenderers(name: string, inner: ToolRenderers): ToolRenderers {
 	const sync = (ctx: any): { group: ToolGroup; isAnchor: boolean; show: boolean } | undefined => {
 		const id = String(ctx?.toolCallId ?? "");
 		if (!id) return undefined;
-		rememberInvalidator(id, ctx?.invalidate);
-		const found = tracker.lookup(id);
+		rememberInvalidator(st, id, ctx?.invalidate);
+		const found = st.tracker.lookup(id);
 		if (!found) return undefined;
 		if (found.isAnchor && Boolean(ctx?.expanded) !== found.group.expanded) {
 			found.group.expanded = Boolean(ctx?.expanded);
-			notifyGroup(found.group, id);
+			notifyGroup(st, found.group, id);
 		}
 		return { ...found, show: Boolean(ctx?.expanded) || found.group.expanded };
 	};
@@ -487,11 +500,11 @@ function groupedRenderers(name: string, inner: ToolRenderers): ToolRenderers {
 	const innerRecord = (ctx: any): { call?: Component; result?: Component } | undefined => {
 		const id = String(ctx?.toolCallId ?? "");
 		if (!id) return undefined;
-		let rec = innerRows.get(id);
+		let rec = st.innerRows.get(id);
 		if (!rec) {
 			rec = {};
-			innerRows.set(id, rec);
-			while (innerRows.size > MAX_INVALIDATORS) innerRows.delete(innerRows.keys().next().value!);
+			st.innerRows.set(id, rec);
+			while (st.innerRows.size > MAX_INVALIDATORS) st.innerRows.delete(st.innerRows.keys().next().value!);
 		}
 		return rec;
 	};
@@ -566,6 +579,7 @@ function resolveBase(name: string, base: ToolRenderers | undefined): ToolRendere
 }
 
 export default function (pi: ExtensionAPI): void {
+	const st = createGroupState();
 	installThinkingDedupe(pi, AssistantMessageComponent, () => settings.dedupeThinking);
 
 	pi.registerToolRenderer((name, next) => {
@@ -576,7 +590,7 @@ export default function (pi: ExtensionAPI): void {
 		const resolved = resolveBase(name, base);
 		if (!settings.grouping || !resolved || settings.groupExclude.includes(name)) return resolved;
 		try {
-			return groupedRenderers(name, resolved);
+			return groupedRenderers(st, name, resolved);
 		} catch {
 			return resolved;
 		}
@@ -590,61 +604,69 @@ export default function (pi: ExtensionAPI): void {
 			if (b?.type !== "toolCall" || b.id == null) continue;
 			const id = String(b.id);
 			if (announced.has(id)) continue;
-			const found = tracker.lookup(id);
+			const found = st.tracker.lookup(id);
 			if (!found) continue;
 			announced.add(id);
 			if (announced.size > 4096) announced.clear();
-			notify(id);
-			notify(found.group.items[0]?.id);
+			notify(st, id);
+			notify(st, found.group.items[0]?.id);
 		}
 	};
 	const onAssistant = (message: any) => {
 		if (!Array.isArray(message?.content)) return;
-		tracker.onAssistantContent(message.content);
+		st.tracker.onAssistantContent(message.content);
 		announce(message.content);
 	};
 	const onNotice = (message: any) => {
 		if (message?.customType !== NOTIFICATION_TYPE || !settings.grouping) return;
 		const key = noticeKey(message);
 		if (!key) return;
-		tracker.onNotification(key);
-		const group = tracker.lookupNotification(key);
-		if (group) notify(group.items[0]?.id); // summary line changed
+		st.tracker.onNotification(key);
+		const group = st.tracker.lookupNotification(key);
+		if (group) notify(st, group.items[0]?.id); // summary line changed
 	};
 	const onStatus = (event: any, running: boolean) => {
 		if (event.parentToolCallId) return;
 		const id = String(event.toolCallId);
-		if (running) tracker.onToolStart(id, String(event.toolName), event.args ?? event.input);
-		else tracker.onToolEnd(id, { isError: Boolean(event.isError) });
-		const found = tracker.lookup(id);
-		if (found) notify(found.group.items[0]?.id);
+		if (running) st.tracker.onToolStart(id, String(event.toolName), event.args ?? event.input);
+		else st.tracker.onToolEnd(id, { isError: Boolean(event.isError) });
+		const found = st.tracker.lookup(id);
+		if (found) notify(st, found.group.items[0]?.id);
 	};
-	pi.on("message_start", (event: any) => {
+	// Only the instance bound to the interactive TUI tracks groups. In-process
+	// subagent sessions (pi-subagents) bind extensions without a UI context, so
+	// ctx.hasUI is false there; their events must never touch group state.
+	const isUi = (ctx: any): boolean => Boolean(ctx?.hasUI);
+	pi.on("message_start", (event: any, ctx: any) => {
+		if (!isUi(ctx)) return;
 		const role = event?.message?.role;
-		if (role === "user") tracker.onUserMessage();
-		else if (role === "assistant") tracker.onAssistantStart();
+		if (role === "user") st.tracker.onUserMessage();
+		else if (role === "assistant") st.tracker.onAssistantStart();
 		else if (role === "custom") onNotice(event.message);
 	});
-	pi.on("message_update", (event: any) => {
+	pi.on("message_update", (event: any, ctx: any) => {
+		if (!isUi(ctx)) return;
 		if (event?.message?.role === "assistant") onAssistant(event.message);
 	});
-	pi.on("message_end", (event: any) => {
+	pi.on("message_end", (event: any, ctx: any) => {
+		if (!isUi(ctx)) return;
 		const m = event?.message;
-		if (m?.role === "user") tracker.onUserMessage();
+		if (m?.role === "user") st.tracker.onUserMessage();
 		else if (m?.role === "assistant") onAssistant(m);
 		else if (m?.role === "custom") onNotice(m);
 	});
-	pi.on("tool_execution_start", (event: any) => onStatus(event, true));
-	pi.on("tool_execution_end", (event: any) => onStatus(event, false));
+	pi.on("tool_execution_start", (event: any, ctx: any) => void (isUi(ctx) && onStatus(event, true)));
+	pi.on("tool_execution_end", (event: any, ctx: any) => void (isUi(ctx) && onStatus(event, false)));
 
 	const reset = () => {
-		tracker.reset();
-		invalidators.clear();
-		innerRows.clear();
+		st.tracker.reset();
+		st.invalidators.clear();
+		st.innerRows.clear();
 		announced.clear();
 	};
 	const replay = (_event: unknown, ctx: any) => {
-		const saved = new Map(invalidators);
+		if (!isUi(ctx)) return;
+		const saved = new Map(st.invalidators);
 		reset();
 		let entries: any[] = [];
 		try {
@@ -654,30 +676,32 @@ export default function (pi: ExtensionAPI): void {
 			const m = entry?.type === "message" ? entry.message : undefined;
 			if (entry?.type === "custom_message" && entry.customType === NOTIFICATION_TYPE && settings.grouping) {
 				const key = noticeKey({ timestamp: new Date(entry.timestamp).getTime() });
-				if (key) tracker.onNotification(key);
+				if (key) st.tracker.onNotification(key);
 				continue;
 			}
 			if (!m) continue;
-			if (m.role === "user") tracker.onUserMessage();
-			else if (m.role === "assistant" && Array.isArray(m.content)) tracker.onAssistantContent(m.content, "done");
-			else if (m.role === "toolResult" && m.toolCallId != null) tracker.onToolEnd(String(m.toolCallId), { isError: Boolean(m.isError) });
+			if (m.role === "user") st.tracker.onUserMessage();
+			else if (m.role === "assistant" && Array.isArray(m.content)) st.tracker.onAssistantContent(m.content, "done");
+			else if (m.role === "toolResult" && m.toolCallId != null) st.tracker.onToolEnd(String(m.toolCallId), { isError: Boolean(m.isError) });
 		}
-		tracker.closeGroup();
+		st.tracker.closeGroup();
 		// Rows built before the replay rendered ungrouped; re-render them.
 		for (const [id, fn] of saved) {
-			invalidators.set(id, fn);
-			notify(id);
+			st.invalidators.set(id, fn);
+			notify(st, id);
 		}
 	};
 	pi.on("session_start", replay);
 	pi.on("session_tree", replay);
 	pi.on("session_compact", replay);
-	pi.on("session_shutdown", reset);
+	pi.on("session_shutdown", (_event: unknown, ctx: any) => {
+		if (isUi(ctx)) reset();
+	});
 
 	if (settings.notificationTakeover) {
 		pi.registerMessageRenderer<NotificationDetails>("subagent-notification", (message, { expanded }, theme) => {
 			if (!message.details) return undefined;
-			return new NotificationView(message.details, expanded, theme, noticeKey(message));
+			return new NotificationView(message.details, expanded, theme, noticeKey(message), st.tracker);
 		});
 	}
 
