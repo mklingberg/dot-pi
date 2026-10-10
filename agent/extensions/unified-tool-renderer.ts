@@ -19,7 +19,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
 import { getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
-import { type Component, Container, type SettingItem, SettingsList, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { type Component, Container, type SettingItem, SettingsList, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 const BULLET = "● ";
 const TREE_LAST = "  └─ ";
@@ -37,6 +37,8 @@ interface Settings {
 	headerTakeover: boolean;
 	/** Tools whose renderCall is replaced by ours (their renderResult is kept). Edit in the JSON file. */
 	headerTools: string[];
+	/** Restyle pi-subagents completion notifications. Registered at load → needs /reload. */
+	notificationTakeover: boolean;
 }
 
 const COLLAPSED_MODES: CollapsedMode[] = ["count", "first-line", "hidden"];
@@ -51,6 +53,7 @@ const DEFAULT_SETTINGS: Settings = {
 	headerTakeover: true,
 	// pi-subagents SUBAGENT_TOOL_NAMES.AGENT and .WORKFLOW
 	headerTools: ["Agent", "SubagentWorkflow"],
+	notificationTakeover: true,
 };
 
 function settingsPath(): string {
@@ -70,6 +73,7 @@ function loadSettings(): Settings {
 		if (!PREVIEW_VALUES.includes(String(s.previewLines))) s.previewLines = DEFAULT_SETTINGS.previewLines;
 		if (!WIDTH_VALUES.includes(String(s.summaryWidth))) s.summaryWidth = DEFAULT_SETTINGS.summaryWidth;
 		s.headerTakeover = s.headerTakeover !== false && s.headerTakeover !== "false";
+		s.notificationTakeover = s.notificationTakeover !== false && s.notificationTakeover !== "false";
 		s.headerTools = Array.isArray(s.headerTools) && s.headerTools.every((t: unknown) => typeof t === "string")
 			? [...s.headerTools]
 			: [...DEFAULT_SETTINGS.headerTools];
@@ -231,6 +235,137 @@ function unifiedResult(name: string): NonNullable<ToolRenderers["renderResult"]>
 	};
 }
 
+// ---- pi-subagents completion notification ("subagent-notification") ----
+
+interface NotificationDetails {
+	description?: string;
+	status?: string;
+	toolUses?: number;
+	turnCount?: number;
+	maxTurns?: number;
+	totalTokens?: number;
+	totalCost?: number;
+	durationMs?: number;
+	outputFile?: string;
+	resultPreview?: string;
+	others?: NotificationDetails[];
+}
+
+/**
+ * pi-subagents' `showCost` lives in <agentDir>/subagents.json (global) and
+ * <cwd>/.pi/subagents.json (project, overrides global). Read tolerantly at
+ * render time; any failure → hidden.
+ */
+function readShowCost(): boolean {
+	let value = false;
+	const files: string[] = [];
+	try {
+		files.push(path.join(getAgentDir(), "subagents.json"));
+	} catch {
+		files.push(path.join(os.homedir(), ".pi", "agent", "subagents.json"));
+	}
+	try {
+		files.push(path.join(process.cwd(), ".pi", "subagents.json"));
+	} catch {}
+	for (const f of files) {
+		try {
+			const raw = JSON.parse(fs.readFileSync(f, "utf8"));
+			if (typeof raw?.showCost === "boolean") value = raw.showCost;
+		} catch {}
+	}
+	return value;
+}
+
+function fmtTokens(n: number): string {
+	if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M tok`;
+	if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k tok`;
+	return `${n} tok`;
+}
+
+function fmtCost(cost: number): string {
+	if (!(cost > 0)) return "";
+	if (cost < 0.0001) return "<$0.0001";
+	if (cost >= 1) return `~$${cost.toFixed(2)}`;
+	const rounded = Number(cost.toFixed(4));
+	const decimals = (String(rounded).split(".")[1] ?? "").length;
+	return `~$${rounded.toFixed(Math.max(2, decimals))}`;
+}
+
+/** Replace homedir with ~, then shorten from the left at a "/" boundary to fit `max` columns. */
+function shortenPath(file: string, max: number): string {
+	const home = os.homedir();
+	let p = home && (file === home || file.startsWith(home + path.sep)) ? `~${file.slice(home.length)}` : file;
+	if (visibleWidth(p) <= max) return p;
+	const parts = p.split("/");
+	for (let i = 1; i < parts.length; i++) {
+		const candidate = `…/${parts.slice(i).join("/")}`;
+		if (visibleWidth(candidate) <= max || i === parts.length - 1) {
+			p = candidate;
+			break;
+		}
+	}
+	return visibleWidth(p) <= max ? p : truncateToWidth(p, Math.max(1, max), "…");
+}
+
+class NotificationView implements Component {
+	constructor(
+		private readonly details: NotificationDetails,
+		private readonly expanded: boolean,
+		private readonly theme: Theme,
+	) {}
+	invalidate(): void {}
+	render(width: number): string[] {
+		const w = Math.max(1, width);
+		const showCost = readShowCost();
+		const all = [this.details, ...(this.details.others ?? [])];
+		const out: string[] = [];
+		if (showCost && all.length > 1) {
+			const total = fmtCost(all.reduce((sum, a) => sum + (a.totalCost ?? 0), 0));
+			if (total) {
+				const tokens = all.reduce((sum, a) => sum + (a.totalTokens ?? 0), 0);
+				out.push(truncateToWidth(this.theme.fg("dim", `${all.length} agents · ${fmtTokens(tokens)} · ${total}`), w));
+			}
+		}
+		for (const d of all) out.push(...this.renderOne(d, w, showCost));
+		return out;
+	}
+	private renderOne(d: NotificationDetails, w: number, showCost: boolean): string[] {
+		const theme = this.theme;
+		const status = d.status ?? "completed";
+		const isError = status === "error" || status === "stopped" || status === "aborted";
+		const color = isError ? "error" : status === "steered" ? "warning" : "success";
+		const statusText = isError ? status : status === "steered" ? "completed (steered)" : "completed";
+		const parts: string[] = [];
+		if ((d.turnCount ?? 0) > 0) parts.push(d.maxTurns != null ? `↻${d.turnCount}≤${d.maxTurns}` : `↻${d.turnCount}`);
+		if ((d.toolUses ?? 0) > 0) parts.push(`${d.toolUses} tool use${d.toolUses === 1 ? "" : "s"}`);
+		if ((d.totalTokens ?? 0) > 0) parts.push(fmtTokens(d.totalTokens!));
+		if (showCost) {
+			const c = fmtCost(d.totalCost ?? 0);
+			if (c) parts.push(c);
+		}
+		if ((d.durationMs ?? 0) > 0) parts.push(`${(d.durationMs! / 1000).toFixed(1)}s`);
+		let header = `${theme.fg(color, BULLET)}${theme.bold(d.description ?? "Agent")} ${theme.fg("dim", statusText)}`;
+		if (parts.length) header += theme.fg("dim", ` · ${parts.join(" · ")}`);
+		const lines = [truncateToWidth(header, w, "…")];
+
+		const raw = (d.resultPreview ?? "").replace(/\r\n?/g, "\n").replace(/\t/g, "  ").trimEnd();
+		let preview = raw ? raw.split("\n") : [];
+		preview = this.expanded ? preview.slice(0, Number(settings.previewLines)) : preview.slice(0, 1);
+		const hasFile = typeof d.outputFile === "string" && d.outputFile.length > 0;
+		preview.forEach((l, i) => {
+			const last = !hasFile && i === preview.length - 1;
+			const conn = theme.fg("muted", last ? TREE_LAST : TREE_STEM);
+			lines.push(truncateToWidth(`${conn}${theme.fg("dim", l)}`, w, "…"));
+		});
+		if (hasFile) {
+			const label = "transcript: ";
+			const avail = w - visibleWidth(TREE_LAST) - label.length;
+			lines.push(truncateToWidth(`${theme.fg("muted", TREE_LAST)}${theme.fg("muted", `${label}${shortenPath(d.outputFile!, Math.max(1, avail))}`)}`, w, "…"));
+		}
+		return lines;
+	}
+}
+
 export default function (pi: ExtensionAPI): void {
 	pi.registerToolRenderer((name, next) => {
 		const base = next();
@@ -256,12 +391,21 @@ export default function (pi: ExtensionAPI): void {
 		};
 	});
 
+	if (settings.notificationTakeover) {
+		pi.registerMessageRenderer<NotificationDetails>("subagent-notification", (message, { expanded }, theme) => {
+			if (!message.details) return undefined;
+			return new NotificationView(message.details, expanded, theme);
+		});
+	}
+
 	const openSettings = async (ctx: ExtensionContext) => {
 		const items: SettingItem[] = [
 			{ id: "enabled", label: "Enabled", currentValue: settings.enabled ? "true" : "false", values: ["true", "false"],
 				description: "false falls back to Pi's default rendering — applies to new tool rows only (Pi caches renderers per row)" },
 			{ id: "headerTakeover", label: "Header takeover", currentValue: settings.headerTakeover ? "true" : "false", values: ["true", "false"],
 				description: "Use the unified header for selected tools but keep their own result. Tool list: headerTools in unified-tool-renderer.json. New rows only" },
+			{ id: "notificationTakeover", label: "Notification takeover", currentValue: settings.notificationTakeover ? "true" : "false", values: ["true", "false"],
+				description: "Restyle pi-subagents completion notifications in the unified tree look. Registered at load: needs /reload to take effect" },
 			{ id: "previewLines", label: "Preview lines", currentValue: settings.previewLines, values: PREVIEW_VALUES,
 				description: "Lines shown in expanded multi-line results" },
 			{ id: "collapsed", label: "Collapsed results", currentValue: settings.collapsed, values: [...COLLAPSED_MODES],
@@ -283,6 +427,7 @@ export default function (pi: ExtensionAPI): void {
 				(id, value) => {
 					if (id === "enabled") settings.enabled = value === "true";
 					else if (id === "headerTakeover") settings.headerTakeover = value === "true";
+					else if (id === "notificationTakeover") settings.notificationTakeover = value === "true";
 					else if (id === "collapsed") settings.collapsed = value as CollapsedMode;
 					else if (id === "previewLines") settings.previewLines = value;
 					else if (id === "summaryWidth") settings.summaryWidth = value;
