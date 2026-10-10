@@ -245,3 +245,71 @@ test("summarize: mixed with subagent tools", () => {
 	assert.equal(summarize([item("read"), item("Agent"), item("read")]), "Read 2 files, spawned 1 agent");
 	assert.equal(summarize([item("Agent", "error"), item("bash")]), "Spawned 1 agent, ran 1 command (1 failed)");
 });
+
+test("notification joins the open group and is never the anchor", () => {
+	const t = createGroupTracker();
+	t.onAssistantContent([call("a")]);
+	t.onNotification("n1");
+	const g = t.lookupNotification("n1")!;
+	assert.equal(g, t.lookup("a")!.group);
+	assert.equal(g.items[0]!.id, "a");
+	t.onNotification("n1"); // idempotent
+	assert.equal(g.notices.length, 1);
+	assert.equal(summarize(g.items, g.notices), "Read 1 file, 1 agent finished");
+});
+
+test("pending notification attaches to the next group", () => {
+	const t = createGroupTracker();
+	t.onNotification("n1");
+	assert.equal(t.lookupNotification("n1"), undefined);
+	t.onAssistantStart();
+	t.onAssistantContent([call("a", "get_subagent_result")]);
+	const g = t.lookupNotification("n1")!;
+	assert.equal(g, t.lookup("a")!.group);
+	assert.equal(t.lookup("a")!.isAnchor, true);
+	assert.equal(summarize(g.items, g.notices), "1 agent finished, checked 1 agent");
+	t.onAssistantContent([call("a", "get_subagent_result"), call("b", "get_subagent_result")]);
+	assert.equal(t.lookupNotification("n1"), g);
+});
+
+test("assistant text / user message / excluded tool drop pending notifications", () => {
+	for (const drop of [
+		(t: ReturnType<typeof createGroupTracker>) => t.onAssistantContent([text()]),
+		(t: ReturnType<typeof createGroupTracker>) => t.onUserMessage(),
+		(t: ReturnType<typeof createGroupTracker>) => t.onAssistantContent([call("e", "edit")]),
+	]) {
+		const t = createGroupTracker();
+		t.onNotification("n1");
+		drop(t);
+		t.onAssistantStart();
+		t.onAssistantContent([call("a")]);
+		assert.equal(t.lookupNotification("n1"), undefined);
+		assert.equal(summarize(t.lookup("a")!.group.items, t.lookup("a")!.group.notices), "Read 1 file");
+	}
+});
+
+test("notification does not close the group", () => {
+	const t = createGroupTracker();
+	t.onAssistantContent([call("a")]);
+	t.onNotification("n1");
+	t.onAssistantStart();
+	t.onAssistantContent([call("b", "get_subagent_result")]);
+	assert.deepEqual(ids(t, "a"), ["a", "b"]);
+});
+
+test("summarize: notice position keeps first-appearance order", () => {
+	assert.equal(summarize([item("read"), item("get_subagent_result")], [{ at: 1 }]), "Read 1 file, 1 agent finished, checked 1 agent");
+	assert.equal(summarize([item("get_subagent_result", "running")], [{ at: 0 }, { at: 1 }]), "2 agents finished, checking 1 agent…");
+});
+
+test("history replay order: notification between tool-only turns", () => {
+	const t = createGroupTracker();
+	t.onUserMessage();
+	t.onAssistantContent([call("a", "Agent")], "done");
+	t.onNotification("n1");
+	t.onAssistantContent([call("b", "get_subagent_result")], "done");
+	t.closeGroup();
+	const g = t.lookup("a")!.group;
+	assert.equal(t.lookupNotification("n1"), g);
+	assert.equal(summarize(g.items, g.notices), "Spawned 1 agent, 1 agent finished, checked 1 agent");
+});

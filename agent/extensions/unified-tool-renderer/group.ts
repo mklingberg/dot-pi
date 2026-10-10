@@ -15,8 +15,15 @@ export interface GroupItem {
 	status: ItemStatus;
 }
 
+/** A subagent completion notification that belongs to a group. `at` = items.length when it joined. */
+export interface GroupNotice {
+	key: string;
+	at: number;
+}
+
 export interface ToolGroup {
 	items: GroupItem[];
+	notices: GroupNotice[];
 	expanded: boolean;
 }
 
@@ -40,6 +47,13 @@ export interface GroupTracker {
 	onToolStart(id: string, toolName: string, args?: any): void;
 	onToolEnd(id: string, result: { isError?: boolean }): void;
 	closeGroup(): void;
+	/**
+	 * A subagent notification arrived: joins the open group, else waits (pending)
+	 * for the next group that opens before any text / user message. Idempotent per key.
+	 */
+	onNotification(key: string): void;
+	/** Read-only: group a notification belongs to (undefined = standalone / still pending). */
+	lookupNotification(key: string): ToolGroup | undefined;
 	/** Read-only: group membership of an already-assigned id. */
 	lookup(id: string): { group: ToolGroup; isAnchor: boolean } | undefined;
 	reset(): void;
@@ -56,6 +70,9 @@ export function createGroupTracker(options: GroupTrackerOptions = {}): GroupTrac
 	let liveGroup: ToolGroup | undefined;
 	// Statuses reported before the id was assigned to a group.
 	const pending = new Map<string, ItemStatus>();
+	// Notifications waiting for the next group, and key → group of joined ones.
+	let pendingNotices: string[] = [];
+	const noticeGroup = new Map<string, ToolGroup>();
 	// Per-message walk progress.
 	let callAt = new Map<number, string>();
 	let textSeen = new Set<number>();
@@ -67,11 +84,17 @@ export function createGroupTracker(options: GroupTrackerOptions = {}): GroupTrac
 			if (idx < 0) return;
 			const [g] = groups.splice(idx, 1);
 			for (const i of g!.items) byId.delete(i.id);
+			for (const n of g!.notices) noticeGroup.delete(n.key);
 		}
 	}
 
 	function newGroup(): ToolGroup {
-		const g: ToolGroup = { items: [], expanded: false };
+		const g: ToolGroup = { items: [], notices: [], expanded: false };
+		for (const key of pendingNotices) {
+			g.notices.push({ key, at: 0 });
+			noticeGroup.set(key, g);
+		}
+		pendingNotices = [];
 		groups.push(g);
 		return g;
 	}
@@ -99,6 +122,7 @@ export function createGroupTracker(options: GroupTrackerOptions = {}): GroupTrac
 		},
 		onUserMessage() {
 			liveGroup = undefined;
+			pendingNotices = [];
 			resetMessage();
 		},
 		onAssistantContent(content, initialStatus = "running") {
@@ -116,6 +140,7 @@ export function createGroupTracker(options: GroupTrackerOptions = {}): GroupTrac
 					if (String(block.text ?? "").trim() && !textSeen.has(i)) {
 						textSeen.add(i);
 						liveGroup = undefined;
+						pendingNotices = [];
 					}
 					maxIndex = Math.max(maxIndex, i);
 					return;
@@ -136,6 +161,7 @@ export function createGroupTracker(options: GroupTrackerOptions = {}): GroupTrac
 				callAt.set(i, id);
 				if (exclude.has(name)) {
 					liveGroup = undefined;
+					pendingNotices = [];
 					return;
 				}
 				if (byId.has(id)) return;
@@ -157,6 +183,20 @@ export function createGroupTracker(options: GroupTrackerOptions = {}): GroupTrac
 		},
 		closeGroup() {
 			liveGroup = undefined;
+			pendingNotices = [];
+		},
+		onNotification(key) {
+			if (noticeGroup.has(key) || pendingNotices.includes(key)) return;
+			if (liveGroup) {
+				liveGroup.notices.push({ key, at: liveGroup.items.length });
+				noticeGroup.set(key, liveGroup);
+				return;
+			}
+			pendingNotices.push(key);
+			if (pendingNotices.length > MAX_PENDING) pendingNotices.shift();
+		},
+		lookupNotification(key) {
+			return noticeGroup.get(key);
 		},
 		lookup(id) {
 			const entry = byId.get(id);
@@ -167,15 +207,18 @@ export function createGroupTracker(options: GroupTrackerOptions = {}): GroupTrac
 			groups = [];
 			byId.clear();
 			pending.clear();
+			pendingNotices = [];
+			noticeGroup.clear();
 			liveGroup = undefined;
 			resetMessage();
 		},
 	};
 }
 
-type Kind = "read" | "search" | "list" | "bash" | "batch" | "mcp" | "agent" | "workflow" | "agentResult" | "steer" | "other";
+type Kind = "finished" | "read" | "search" | "list" | "bash" | "batch" | "mcp" | "agent" | "workflow" | "agentResult" | "steer" | "other";
 
 const PHRASES: Record<Kind, { past: [string, string]; ing: [string, string] }> = {
+	finished: { past: ["", "agent"], ing: ["", "agent"] },
 	read: { past: ["read", "file"], ing: ["reading", "file"] },
 	search: { past: ["searched", "pattern"], ing: ["searching", "pattern"] },
 	list: { past: ["listed", "path"], ing: ["listing", "path"] },
@@ -207,16 +250,21 @@ function kindOf(name: string): Kind {
 	return "other";
 }
 
-export function summarize(items: GroupItem[]): string {
+export function summarize(items: GroupItem[], notices: { at: number }[] = []): string {
 	const counts = new Map<Kind, number>();
-	for (const item of items) {
+	const add = (kind: Kind, n: number) => counts.set(kind, (counts.get(kind) ?? 0) + n);
+	// First-appearance order: notices with at=p come before item p.
+	for (let p = 0; p <= items.length; p++) {
+		for (const n of notices) if (Math.min(n.at, items.length) === p) add("finished", 1);
+		const item = items[p];
+		if (!item) continue;
 		const kind = kindOf(item.toolName);
-		const n = kind === "batch" && Array.isArray(item.args?.calls) ? item.args.calls.length : 1;
-		counts.set(kind, (counts.get(kind) ?? 0) + n);
+		add(kind, kind === "batch" && Array.isArray(item.args?.calls) ? item.args.calls.length : 1);
 	}
 	const running = items.some((i) => i.status === "running");
 	const failed = items.filter((i) => i.status === "error").length;
 	const parts = [...counts].map(([kind, n]) => {
+		if (kind === "finished") return `${n} agent${n === 1 ? "" : "s"} finished`;
 		const p = PHRASES[kind];
 		const [verb, noun] = running ? p.ing : p.past;
 		return `${verb} ${n} ${noun}${n === 1 ? "" : "s"}`;
