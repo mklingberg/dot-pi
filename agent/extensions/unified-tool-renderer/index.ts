@@ -343,10 +343,15 @@ class NotificationView implements Component {
 		private readonly details: NotificationDetails,
 		private readonly expanded: boolean,
 		private readonly theme: Theme,
+		private readonly key: string | undefined,
 	) {}
 	invalidate(): void {}
 	render(width: number): string[] {
 		const w = Math.max(1, width);
+		// Read tracker state at render time: the group may form after this component was built.
+		const group = this.key && settings.grouping ? tracker.lookupNotification(this.key) : undefined;
+		if (group && !this.expanded && !group.expanded) return [];
+		const expanded = this.expanded || Boolean(group?.expanded);
 		const showCost = readShowCost();
 		const all = [this.details, ...(this.details.others ?? [])];
 		const out: string[] = [];
@@ -357,10 +362,10 @@ class NotificationView implements Component {
 				out.push(truncateToWidth(this.theme.fg("dim", `${all.length} agents · ${fmtTokens(tokens)} · ${total}`), w));
 			}
 		}
-		for (const d of all) out.push(...this.renderOne(d, w, showCost));
+		for (const d of all) out.push(...this.renderOne(d, w, showCost, expanded));
 		return out;
 	}
-	private renderOne(d: NotificationDetails, w: number, showCost: boolean): string[] {
+	private renderOne(d: NotificationDetails, w: number, showCost: boolean, expandedView: boolean): string[] {
 		const theme = this.theme;
 		const status = d.status ?? "completed";
 		const isError = status === "error" || status === "stopped" || status === "aborted";
@@ -377,14 +382,14 @@ class NotificationView implements Component {
 		if ((d.durationMs ?? 0) > 0) parts.push(`${(d.durationMs! / 1000).toFixed(1)}s`);
 		let header = `${theme.fg(color, BULLET)}${theme.bold(d.description ?? "Agent")} ${theme.fg("dim", statusText)}`;
 		if (parts.length) header += theme.fg("dim", ` · ${parts.join(" · ")}`);
-		if (!this.expanded && settings.notificationCollapsed) {
+		if (!expandedView && settings.notificationCollapsed) {
 			return [truncateToWidth(header + theme.fg("dim", " · ctrl+o to expand"), w, "…")];
 		}
 		const lines = [truncateToWidth(header, w, "…")];
 
 		const raw = (d.resultPreview ?? "").replace(/\r\n?/g, "\n").replace(/\t/g, "  ").trimEnd();
 		let preview = raw ? raw.split("\n") : [];
-		preview = this.expanded ? preview.slice(0, Number(settings.previewLines)) : preview.slice(0, 1);
+		preview = expandedView ? preview.slice(0, Number(settings.previewLines)) : preview.slice(0, 1);
 		const hasFile = typeof d.outputFile === "string" && d.outputFile.length > 0;
 		preview.forEach((l, i) => {
 			const last = !hasFile && i === preview.length - 1;
@@ -398,6 +403,13 @@ class NotificationView implements Component {
 		}
 		return lines;
 	}
+}
+
+const NOTIFICATION_TYPE = "subagent-notification";
+// details carry no id; the message timestamp is identical live and in session replay.
+function noticeKey(message: any): string | undefined {
+	const ts = message?.timestamp;
+	return typeof ts === "number" && Number.isFinite(ts) ? String(ts) : undefined;
 }
 
 // ---- grouping (Claude Code style summary of consecutive tool calls) ----
@@ -445,7 +457,7 @@ function summaryLine(group: ToolGroup, theme: Theme, hint: boolean): string {
 	const running = group.items.some((i) => i.status === "running");
 	const failed = group.items.some((i) => i.status === "error");
 	const bullet = theme.fg(running ? "warning" : failed ? "error" : "success", BULLET);
-	return `${bullet}${theme.fg("muted", summarize(group.items))}${hint ? theme.fg("dim", " · click to expand") : ""}`;
+	return `${bullet}${theme.fg("muted", summarize(group.items, group.notices))}${hint ? theme.fg("dim", " · click to expand") : ""}`;
 }
 
 function groupedRenderers(name: string, inner: ToolRenderers): ToolRenderers {
@@ -589,6 +601,14 @@ export default function (pi: ExtensionAPI): void {
 		tracker.onAssistantContent(message.content);
 		announce(message.content);
 	};
+	const onNotice = (message: any) => {
+		if (message?.customType !== NOTIFICATION_TYPE || !settings.grouping) return;
+		const key = noticeKey(message);
+		if (!key) return;
+		tracker.onNotification(key);
+		const group = tracker.lookupNotification(key);
+		if (group) notify(group.items[0]?.id); // summary line changed
+	};
 	const onStatus = (event: any, running: boolean) => {
 		if (event.parentToolCallId) return;
 		const id = String(event.toolCallId);
@@ -601,6 +621,7 @@ export default function (pi: ExtensionAPI): void {
 		const role = event?.message?.role;
 		if (role === "user") tracker.onUserMessage();
 		else if (role === "assistant") tracker.onAssistantStart();
+		else if (role === "custom") onNotice(event.message);
 	});
 	pi.on("message_update", (event: any) => {
 		if (event?.message?.role === "assistant") onAssistant(event.message);
@@ -609,6 +630,7 @@ export default function (pi: ExtensionAPI): void {
 		const m = event?.message;
 		if (m?.role === "user") tracker.onUserMessage();
 		else if (m?.role === "assistant") onAssistant(m);
+		else if (m?.role === "custom") onNotice(m);
 	});
 	pi.on("tool_execution_start", (event: any) => onStatus(event, true));
 	pi.on("tool_execution_end", (event: any) => onStatus(event, false));
@@ -628,6 +650,11 @@ export default function (pi: ExtensionAPI): void {
 		} catch {}
 		for (const entry of entries) {
 			const m = entry?.type === "message" ? entry.message : undefined;
+			if (entry?.type === "custom_message" && entry.customType === NOTIFICATION_TYPE && settings.grouping) {
+				const key = noticeKey({ timestamp: new Date(entry.timestamp).getTime() });
+				if (key) tracker.onNotification(key);
+				continue;
+			}
 			if (!m) continue;
 			if (m.role === "user") tracker.onUserMessage();
 			else if (m.role === "assistant" && Array.isArray(m.content)) tracker.onAssistantContent(m.content, "done");
@@ -648,7 +675,7 @@ export default function (pi: ExtensionAPI): void {
 	if (settings.notificationTakeover) {
 		pi.registerMessageRenderer<NotificationDetails>("subagent-notification", (message, { expanded }, theme) => {
 			if (!message.details) return undefined;
-			return new NotificationView(message.details, expanded, theme);
+			return new NotificationView(message.details, expanded, theme, noticeKey(message));
 		});
 	}
 
