@@ -21,6 +21,8 @@ import type { ExtensionAPI, ExtensionContext, Theme, ToolRenderers } from "@eare
 import { getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, type SettingItem, SettingsList, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
+import { createGroupTracker, DEFAULT_GROUP_EXCLUDE, summarize, type ToolGroup } from "./group.ts";
+
 const BULLET = "● ";
 const TREE_LAST = "  └─ ";
 const TREE_STEM = "  │  ";
@@ -39,6 +41,10 @@ interface Settings {
 	headerTools: string[];
 	/** Restyle pi-subagents completion notifications. Registered at load → needs /reload. */
 	notificationTakeover: boolean;
+	/** Collapse runs of consecutive tool calls into one Claude-style summary line. New rows only. */
+	grouping: boolean;
+	/** Tools never grouped (they render as before and end the current run). Edit in the JSON file. */
+	groupExclude: string[];
 }
 
 const COLLAPSED_MODES: CollapsedMode[] = ["count", "first-line", "hidden"];
@@ -54,6 +60,8 @@ const DEFAULT_SETTINGS: Settings = {
 	// pi-subagents SUBAGENT_TOOL_NAMES.AGENT and .WORKFLOW
 	headerTools: ["Agent", "SubagentWorkflow"],
 	notificationTakeover: true,
+	grouping: true,
+	groupExclude: [...DEFAULT_GROUP_EXCLUDE],
 };
 
 function settingsPath(): string {
@@ -77,11 +85,15 @@ function loadSettings(): Settings {
 		s.headerTools = Array.isArray(s.headerTools) && s.headerTools.every((t: unknown) => typeof t === "string")
 			? [...s.headerTools]
 			: [...DEFAULT_SETTINGS.headerTools];
+		s.grouping = s.grouping !== false && s.grouping !== "false";
+		s.groupExclude = Array.isArray(s.groupExclude) && s.groupExclude.every((t: unknown) => typeof t === "string")
+			? [...s.groupExclude]
+			: [...DEFAULT_GROUP_EXCLUDE];
 		s.previewLines = String(s.previewLines);
 		s.summaryWidth = String(s.summaryWidth);
 		return s;
 	} catch {
-		return { ...DEFAULT_SETTINGS, headerTools: [...DEFAULT_SETTINGS.headerTools] };
+		return { ...DEFAULT_SETTINGS, headerTools: [...DEFAULT_SETTINGS.headerTools], groupExclude: [...DEFAULT_GROUP_EXCLUDE] };
 	}
 }
 
@@ -416,6 +428,8 @@ export default function (pi: ExtensionAPI): void {
 				description: "Use the unified header for selected tools but keep their own result. Tool list: headerTools in unified-tool-renderer.json. New rows only" },
 			{ id: "notificationTakeover", label: "Notification takeover", currentValue: settings.notificationTakeover ? "true" : "false", values: ["true", "false"],
 				description: "Restyle pi-subagents completion notifications in the unified tree look. Registered at load: needs /reload to take effect" },
+			{ id: "grouping", label: "Grouping", currentValue: settings.grouping ? "true" : "false", values: ["true", "false"],
+				description: "Collapse consecutive tool calls into one summary line (click or ctrl+o to expand). Excluded tools: groupExclude in unified-tool-renderer.json. New rows only" },
 			{ id: "previewLines", label: "Preview lines", currentValue: settings.previewLines, values: PREVIEW_VALUES,
 				description: "Lines shown in expanded multi-line results" },
 			{ id: "collapsed", label: "Collapsed results", currentValue: settings.collapsed, values: [...COLLAPSED_MODES],
@@ -438,6 +452,7 @@ export default function (pi: ExtensionAPI): void {
 					if (id === "enabled") settings.enabled = value === "true";
 					else if (id === "headerTakeover") settings.headerTakeover = value === "true";
 					else if (id === "notificationTakeover") settings.notificationTakeover = value === "true";
+					else if (id === "grouping") settings.grouping = value === "true";
 					else if (id === "collapsed") settings.collapsed = value as CollapsedMode;
 					else if (id === "previewLines") settings.previewLines = value;
 					else if (id === "summaryWidth") settings.summaryWidth = value;
