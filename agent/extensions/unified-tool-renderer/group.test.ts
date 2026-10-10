@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_GROUP_EXCLUDE, createGroupTracker, summarize, type GroupItem } from "./group.ts";
+import { DEFAULT_GROUP_EXCLUDE, createGroupTracker, leadingNoticeKey, summarize, type GroupItem } from "./group.ts";
 
 const item = (toolName: string, status: GroupItem["status"] = "done", args: any = {}): GroupItem => ({
 	id: Math.random().toString(36),
@@ -312,4 +312,19 @@ test("history replay order: notification between tool-only turns", () => {
 	const g = t.lookup("a")!.group;
 	assert.equal(t.lookupNotification("n1"), g);
 	assert.equal(summarize(g.items, g.notices), "Spawned 1 agent, 1 agent finished, checked 1 agent");
+});
+
+test("leadingNoticeKey: only notices attached before the first tool row lead", () => {
+	const t = createGroupTracker();
+	t.onNotification("n1");
+	t.onAssistantStart();
+	t.onAssistantContent([call("a", "get_subagent_result")], "done");
+	t.onNotification("n2");
+	const g = t.lookup("a")!.group;
+	assert.equal(leadingNoticeKey(g), "n1");
+
+	const t2 = createGroupTracker();
+	t2.onAssistantContent([call("a")], "done");
+	t2.onNotification("n1");
+	assert.equal(leadingNoticeKey(t2.lookup("a")!.group), undefined);
 });

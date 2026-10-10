@@ -27,6 +27,14 @@ export interface ToolGroup {
 	expanded: boolean;
 }
 
+/**
+ * Key of the notification that is first in display order (attached before the
+ * first tool row), or undefined when the group's first member is a tool row.
+ */
+export function leadingNoticeKey(group: ToolGroup): string | undefined {
+	return group.notices.find((n) => n.at <= 0)?.key;
+}
+
 export interface GroupTrackerOptions {
 	exclude?: string[];
 	maxItems?: number;
