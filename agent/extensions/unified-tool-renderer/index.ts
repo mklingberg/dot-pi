@@ -18,7 +18,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, Theme, ToolRenderers } from "@earendil-works/pi-coding-agent";
-import { AssistantMessageComponent, getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
+import { AssistantMessageComponent, CustomMessageComponent, ToolExecutionComponent, getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { type Component, Container, type SettingItem, SettingsList, type TuiMouseEvent, type TuiMouseEventResult, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 import { installThinkingDedupe } from "./thinking.ts";
@@ -633,7 +633,7 @@ function resolveBase(name: string, base: ToolRenderers | undefined): ToolRendere
 
 export default function (pi: ExtensionAPI): void {
 	const st = createGroupState();
-	installThinkingDedupe(pi, AssistantMessageComponent, () => settings.dedupeThinking);
+	installThinkingDedupe(pi, AssistantMessageComponent, ToolExecutionComponent, CustomMessageComponent, () => settings.dedupeThinking);
 
 	pi.registerToolRenderer((name, next) => {
 		const base = next();
@@ -773,7 +773,7 @@ export default function (pi: ExtensionAPI): void {
 			{ id: "grouping", label: "Grouping", currentValue: settings.grouping ? "true" : "false", values: ["true", "false"],
 				description: "Collapse consecutive tool calls into one summary line (click or ctrl+o to expand). Excluded tools: groupExclude in unified-tool-renderer.json. New rows only" },
 			{ id: "dedupeThinking", label: "Dedupe thinking labels", currentValue: settings.dedupeThinking ? "true" : "false", values: ["true", "false"],
-				description: "One 'Thinking...' per run of hidden thinking. Applies live" },
+				description: "One 'Thinking...' per run of hidden thinking; label sits flush under tool groups. Applies live" },
 			{ id: "previewLines", label: "Preview lines", currentValue: settings.previewLines, values: PREVIEW_VALUES,
 				description: "Lines shown in expanded multi-line results" },
 			{ id: "collapsed", label: "Collapsed results", currentValue: settings.collapsed, values: [...COLLAPSED_MODES],

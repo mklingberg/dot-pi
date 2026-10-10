@@ -80,3 +80,44 @@ test("shape preserved; non-assistant lines never altered", () => {
 	assert.deepEqual(out[1], [label()]);
 	assert.deepEqual(out[3], [label()]); // non-blank non-assistant line broke the run
 });
+
+const tool = (lines: string[]) => ({ lines, kind: "tool" as const });
+const custom = (lines: string[]) => ({ lines, kind: "custom" as const });
+const row = " ● Ran 1 command";
+
+test("tool then assistant [blank,label,blank,text] drops the leading blank", () => {
+	const out = dedupeThinkingRuns([tool([row]), asst([blank(), label(), blank(), text("hi")])]);
+	assert.deepEqual(out[1], [label(), blank(), text("hi")]);
+});
+
+test("tool then thinking-only [blank,label] -> [label]", () => {
+	const out = dedupeThinkingRuns([tool([row]), asst([blank(), label()])]);
+	assert.deepEqual(out[1], [label()]);
+});
+
+test("custom message then assistant drops the leading blank", () => {
+	const out = dedupeThinkingRuns([custom([" notice"]), asst([blank(), label(), blank(), text("x")])]);
+	assert.deepEqual(out[1], [label(), blank(), text("x")]);
+});
+
+test("user/other child then assistant is unchanged", () => {
+	const input = [other([" user: hi"]), asst([blank(), label(), blank(), text("x")])];
+	assert.deepEqual(dedupeThinkingRuns(input)[1], [blank(), label(), blank(), text("x")]);
+});
+
+test("empty tool child looks past to the last non-blank child", () => {
+	const out = dedupeThinkingRuns([tool([row]), tool([]), tool([blank()]), asst([blank(), label()])]);
+	assert.deepEqual(out[3], [label()]);
+	const out2 = dedupeThinkingRuns([other([" user"]), tool([]), asst([blank(), label()])]);
+	assert.deepEqual(out2[2], [blank(), label()]);
+});
+
+test("assistant text first (no label) after tool is unchanged", () => {
+	const out = dedupeThinkingRuns([tool([row]), asst([blank(), text("hi"), blank(), label()])]);
+	assert.deepEqual(out[1], [blank(), text("hi"), blank(), label()]);
+});
+
+test("dropped duplicate label leaves no stray blanks and run tracking holds", () => {
+	const out = dedupeThinkingRuns([tool([row]), asst([blank(), label()]), asst([blank(), label()]), asst([blank(), label(), blank(), text("t")])]);
+	assert.deepEqual(out, [[row], [label()], [], [blank(), text("t")]]);
+});

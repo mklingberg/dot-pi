@@ -13,13 +13,20 @@ export interface DedupeChild {
 	lines: string[];
 	/** Set ⇒ child is an assistant message whose label lines may be dropped. */
 	label?: string;
+	/** Child kind; "tool"/"custom" make a following assistant label sit flush beneath them. */
+	kind?: "assistant" | "tool" | "custom" | "other";
 }
 
 export function dedupeThinkingRuns(children: DedupeChild[]): string[][] {
 	let inRun = false;
+	// Kind of the last child that produced non-blank output.
+	let prevKind: DedupeChild["kind"] = "other";
 	return children.map((child) => {
 		if (child.label === undefined) {
-			if (child.lines.some((l) => strip(l).trim() !== "")) inRun = false;
+			if (child.lines.some((l) => strip(l).trim() !== "")) {
+				inRun = false;
+				prevKind = child.kind ?? "other";
+			}
 			return [...child.lines];
 		}
 		const target = child.label.trim();
@@ -56,7 +63,17 @@ export function dedupeThinkingRuns(children: DedupeChild[]): string[][] {
 		}
 		flush();
 		if (pendingOsc && out.length > 0) out[out.length - 1] += pendingOsc;
-		return out;
+		// Pi adds a leading Spacer(1) to visible assistant content; after a tool row or
+		// custom message the label should sit directly beneath it.
+		const first = out.findIndex((l) => strip(l).trim() !== "");
+		let result = out;
+		if ((prevKind === "tool" || prevKind === "custom") && first > 0 && strip(out[first]).trim() === target) {
+			const osc = out.slice(0, first).map(oscOf).join("");
+			result = out.slice(first);
+			result[0] = osc + result[0];
+		}
+		if (first >= 0) prevKind = "assistant";
+		return result;
 	});
 }
 
@@ -81,6 +98,8 @@ interface PatchState {
 export function installThinkingDedupe(
 	pi: import("@earendil-works/pi-coding-agent").ExtensionAPI,
 	AssistantMessageComponent: abstract new (...args: any[]) => any,
+	ToolExecutionComponent: abstract new (...args: any[]) => any,
+	CustomMessageComponent: abstract new (...args: any[]) => any,
 	isEnabled: () => boolean,
 ): void {
 	const proto: any = Object.getPrototypeOf((AssistantMessageComponent as any).prototype);
@@ -105,7 +124,12 @@ export function installThinkingDedupe(
 				const rendered = children.map((child) => {
 					const lines: string[] = child.render(width);
 					const label = child instanceof AssistantMessageComponent ? String(child.hiddenThinkingLabel ?? "Thinking...") : undefined;
-					return { lines, label };
+					const kind: DedupeChild["kind"] =
+						label !== undefined ? "assistant"
+						: child instanceof ToolExecutionComponent ? "tool"
+						: child instanceof CustomMessageComponent ? "custom"
+						: "other";
+					return { lines, label, kind };
 				});
 				const deduped = dedupeThinkingRuns(rendered);
 				const out: string[] = [];
