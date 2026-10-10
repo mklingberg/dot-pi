@@ -284,7 +284,7 @@ test("assistant text / user message / excluded tool drop pending notifications",
 		t.onAssistantStart();
 		t.onAssistantContent([call("a")]);
 		assert.equal(t.lookupNotification("n1"), undefined);
-		assert.equal(summarize(t.lookup("a")!.group.items, t.lookup("a")!.group.notices), "Read 1 file");
+		assert.equal(summarize(t.lookup("a")!.group.items, t.lookup("a")!.group.notices), "Reading 1 file…");
 	}
 });
 
