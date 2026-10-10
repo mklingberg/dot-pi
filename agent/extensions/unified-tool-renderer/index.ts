@@ -443,7 +443,7 @@ function groupedRenderers(name: string, inner: ToolRenderers): ToolRenderers {
 		const id = String(ctx?.toolCallId ?? "");
 		if (!id) return undefined;
 		rememberInvalidator(id, ctx?.invalidate);
-		const found = tracker.lookup(id, name, args);
+		const found = tracker.lookup(id);
 		if (!found) return undefined;
 		if (found.isAnchor && Boolean(ctx?.expanded) !== found.group.expanded) {
 			found.group.expanded = Boolean(ctx?.expanded);
@@ -525,31 +525,80 @@ export default function (pi: ExtensionAPI): void {
 		}
 	});
 
-	// Feed the group tracker. Nested calls (made by another tool) have no row of their own.
-	pi.on("tool_execution_start", (event: any) => {
+	// Group membership comes from message content (rows are built during
+	// message_update, before tool_execution_start); events only carry status.
+	const announced = new Set<string>();
+	const announce = (content: any[]) => {
+		for (const b of content) {
+			if (b?.type !== "toolCall" || b.id == null) continue;
+			const id = String(b.id);
+			if (announced.has(id)) continue;
+			const found = tracker.lookup(id);
+			if (!found) continue;
+			announced.add(id);
+			if (announced.size > 4096) announced.clear();
+			notify(id);
+			notify(found.group.items[0]?.id);
+		}
+	};
+	const onAssistant = (message: any) => {
+		if (!Array.isArray(message?.content)) return;
+		tracker.onAssistantContent(message.content);
+		announce(message.content);
+	};
+	const onStatus = (event: any, running: boolean) => {
 		if (event.parentToolCallId) return;
 		const id = String(event.toolCallId);
-		tracker.onToolStart(id, String(event.toolName), event.args ?? event.input ?? {});
-		const found = tracker.lookup(id, String(event.toolName), event.args ?? {});
+		if (running) tracker.onToolStart(id, String(event.toolName), event.args ?? event.input);
+		else tracker.onToolEnd(id, { isError: Boolean(event.isError) });
+		const found = tracker.lookup(id);
 		if (found) notify(found.group.items[0]?.id);
+	};
+	pi.on("message_start", (event: any) => {
+		const role = event?.message?.role;
+		if (role === "user") tracker.onUserMessage();
+		else if (role === "assistant") tracker.onAssistantStart();
 	});
-	pi.on("tool_execution_end", (event: any) => {
-		if (event.parentToolCallId) return;
-		const id = String(event.toolCallId);
-		tracker.onToolEnd(id, { isError: Boolean(event.isError) });
-		const found = tracker.lookup(id, String(event.toolName), {});
-		if (found) notify(found.group.items[0]?.id);
+	pi.on("message_update", (event: any) => {
+		if (event?.message?.role === "assistant") onAssistant(event.message);
 	});
 	pi.on("message_end", (event: any) => {
 		const m = event?.message;
-		if (m?.role === "user") tracker.closeGroup();
-		else if (m?.role === "assistant" && Array.isArray(m.content) && m.content.some((c: any) => c?.type === "text" && String(c.text ?? "").trim())) tracker.closeGroup();
+		if (m?.role === "user") tracker.onUserMessage();
+		else if (m?.role === "assistant") onAssistant(m);
 	});
+	pi.on("tool_execution_start", (event: any) => onStatus(event, true));
+	pi.on("tool_execution_end", (event: any) => onStatus(event, false));
+
 	const reset = () => {
 		tracker.reset();
 		invalidators.clear();
+		announced.clear();
 	};
-	pi.on("session_start", reset);
+	const replay = (_event: unknown, ctx: any) => {
+		const saved = new Map(invalidators);
+		reset();
+		let entries: any[] = [];
+		try {
+			entries = ctx?.sessionManager?.getBranch?.() ?? [];
+		} catch {}
+		for (const entry of entries) {
+			const m = entry?.type === "message" ? entry.message : undefined;
+			if (!m) continue;
+			if (m.role === "user") tracker.onUserMessage();
+			else if (m.role === "assistant" && Array.isArray(m.content)) tracker.onAssistantContent(m.content, "done");
+			else if (m.role === "toolResult" && m.toolCallId != null) tracker.onToolEnd(String(m.toolCallId), { isError: Boolean(m.isError) });
+		}
+		tracker.closeGroup();
+		// Rows built before the replay rendered ungrouped; re-render them.
+		for (const [id, fn] of saved) {
+			invalidators.set(id, fn);
+			notify(id);
+		}
+	};
+	pi.on("session_start", replay);
+	pi.on("session_tree", replay);
+	pi.on("session_compact", replay);
 	pi.on("session_shutdown", reset);
 
 	if (settings.notificationTakeover) {
