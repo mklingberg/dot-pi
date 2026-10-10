@@ -43,7 +43,9 @@
       "config": {
         "@vanillagreen/pi-tool-renderer": {
           "renderMutationTools": true,
-          "toolChrome": "off"
+          "toolChrome": "off",
+          "stackToolCalls": true,
+          "stackChildDisplay": "headline"
         }
       }
     }

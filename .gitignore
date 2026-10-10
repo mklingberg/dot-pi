@@ -23,3 +23,4 @@ agent/extensions/pi-permission-system/logs/
 agent/AGENTS.md
 agent/agents/*
 !agent/agents/general-purpose.md
+.planning/
