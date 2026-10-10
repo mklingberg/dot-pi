@@ -15,13 +15,52 @@ export interface DedupeChild {
 	label?: string;
 	/** Child kind; "tool"/"custom" make a following assistant label sit flush beneath them. */
 	kind?: "assistant" | "tool" | "custom" | "other";
+	/** Tool group this child is a member of (identity compared with ===). */
+	group?: object;
+	/** Whether that group is rendered as an open panel. */
+	groupExpanded?: boolean;
 }
 
-export function dedupeThinkingRuns(children: DedupeChild[]): string[][] {
+export interface DedupeOptions {
+	/** false ⇒ only the in-group label hiding applies; everything else passes through. Default true. */
+	dedupe?: boolean;
+}
+
+/**
+ * Indexes of thinking-only assistant children sitting between two members of the
+ * same expanded group. Claude Code shows no "Thinking..." inside an open group.
+ */
+function labelsInsideOpenGroups(children: DedupeChild[]): Set<number> {
+	const hidden = new Set<number>();
+	let prev: DedupeChild | undefined;
+	const pending: number[] = [];
+	children.forEach((child, i) => {
+		if (child.group !== undefined) {
+			if (prev && prev.group === child.group && prev.groupExpanded && child.groupExpanded) for (const j of pending) hidden.add(j);
+			prev = child;
+			pending.length = 0;
+			return;
+		}
+		if (child.label !== undefined && prev) {
+			const target = child.label.trim();
+			if (child.lines.every((l) => { const t = strip(l).trim(); return t === "" || t === target; })) pending.push(i);
+			else {
+				pending.length = 0;
+				prev = undefined;
+			}
+		}
+	});
+	return hidden;
+}
+
+export function dedupeThinkingRuns(children: DedupeChild[], options: DedupeOptions = {}): string[][] {
+	const hiddenInGroup = labelsInsideOpenGroups(children);
+	if (options.dedupe === false) return children.map((c, i) => (hiddenInGroup.has(i) ? [] : [...c.lines]));
 	let inRun = false;
 	// Kind of the last child that produced non-blank output.
 	let prevKind: DedupeChild["kind"] = "other";
-	return children.map((child) => {
+	return children.map((child, index) => {
+		if (hiddenInGroup.has(index)) return [];
 		// A custom message whose output is only blank lines (e.g. a notification in a collapsed
 		// group renders 0 lines, leaving just Pi's own leading Spacer) renders as nothing, so a
 		// collapsed group looks exactly like one without a notification. Applies whenever the
@@ -82,6 +121,51 @@ export function dedupeThinkingRuns(children: DedupeChild[]): string[][] {
 		if (first >= 0) prevKind = "assistant";
 		return result;
 	});
+}
+
+export interface PanelOptions {
+	/** First member of the open group: its leading blank line is the top padding. */
+	first: boolean;
+	/** Last member: one padded blank line is appended below. */
+	last: boolean;
+	/** Fills one line to the panel background. */
+	fill: (line: string) => string;
+}
+
+export interface PanelResult {
+	lines: string[];
+	/** Net lines added at the start (+) or dropped (−): child mouse y = event.y − shift. */
+	shift: number;
+	/** Whether a padded line was appended below. */
+	bottom: boolean;
+}
+
+/**
+ * Decorates one member's lines for an open group panel: every line is background
+ * filled; the first member gets a padded blank line above (its own leading blank,
+ * or a new one), later members lose their leading blank lines (rows sit tight),
+ * the last member gets a padded blank line below.
+ */
+export function panelLines(lines: string[], { first, last, fill }: PanelOptions): PanelResult {
+	if (lines.length === 0) return { lines: [], shift: 0, bottom: false };
+	let body = lines;
+	let shift = 0;
+	if (first) {
+		if (strip(body[0]!).trim() !== "") {
+			body = ["", ...body];
+			shift = 1;
+		}
+	} else {
+		let n = 0;
+		while (n < body.length && strip(body[n]!).trim() === "") n++;
+		if (n > 0) {
+			body = body.slice(n);
+			shift = -n;
+		}
+	}
+	const out = body.map(fill);
+	if (last) out.push(fill(""));
+	return { lines: out, shift, bottom: last };
 }
 
 // ---------------------------------------------------------------------------

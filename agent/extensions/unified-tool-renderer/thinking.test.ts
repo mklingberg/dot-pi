@@ -138,3 +138,75 @@ test("label flush under tool even past a dropped blank-only custom child", () =>
 	]);
 	assert.deepEqual(out, [["tool"], [], ["Thinking..."]]);
 });
+
+// ---- open group panel (hide labels inside, panelLines) ----
+
+const G1 = {};
+const G2 = {};
+const member = (g: object, expanded = true, lines = [blank(), text("row")]) => ({ lines, kind: "tool" as const, group: g, groupExpanded: expanded });
+
+test("thinking-only child between two members of an expanded group is hidden", () => {
+	const out = dedupeThinkingRuns([member(G1), asst([blank(), label()]), member(G1)]);
+	assert.deepEqual(out[1], []);
+	assert.deepEqual(out[0], [blank(), text("row")]);
+});
+
+test("several thinking-only children between members are all hidden", () => {
+	const out = dedupeThinkingRuns([member(G1), asst([blank(), label()]), asst([blank(), label()]), member(G1)]);
+	assert.deepEqual([out[1], out[2]], [[], []]);
+});
+
+test("collapsed group keeps today's behaviour inside", () => {
+	const kids = [member(G1, false), asst([blank(), label()]), member(G1, false)];
+	assert.deepEqual(dedupeThinkingRuns(kids)[1], [label()]); // flush under the tool row, as before
+});
+
+test("labels before the header / after the last member are unaffected", () => {
+	const out = dedupeThinkingRuns([asst([blank(), label()]), member(G1), member(G1), asst([blank(), label()])]);
+	assert.deepEqual(out[0], [blank(), label()]);
+	assert.deepEqual(out[3], [label()]); // flush under the tool row, as before
+});
+
+test("label between members of different groups is untouched", () => {
+	const out = dedupeThinkingRuns([member(G1), asst([blank(), label()]), member(G2)]);
+	assert.deepEqual(out[1], [label()]);
+});
+
+test("assistant child with visible text inside a group is left alone", () => {
+	const out = dedupeThinkingRuns([member(G1), asst([blank(), text("hi")]), asst([blank(), label()]), member(G1)]);
+	assert.deepEqual(out[1], [blank(), text("hi")]);
+	assert.deepEqual(out[2], [blank(), label()]);
+});
+
+test("dedupe:false only hides labels inside open groups", () => {
+	const kids = [asst([label()]), asst([label()]), member(G1), asst([blank(), label()]), member(G1)];
+	const out = dedupeThinkingRuns(kids, { dedupe: false });
+	assert.deepEqual(out.slice(0, 2), [[label()], [label()]]);
+	assert.deepEqual(out[3], []);
+});
+
+import { panelLines } from "./thinking.ts";
+const fill = (l: string) => `«${l.padEnd(10)}»`;
+
+test("panelLines: first member keeps its leading blank as top pad, last gets bottom pad", () => {
+	const r = panelLines(["", "head", "row"], { first: true, last: true, fill });
+	assert.deepEqual(r.lines, [fill(""), fill("head"), fill("row"), fill("")]);
+	assert.equal(r.shift, 0);
+	assert.equal(r.bottom, true);
+});
+
+test("panelLines: first member without leading blank gets one prepended", () => {
+	const r = panelLines(["head"], { first: true, last: false, fill });
+	assert.deepEqual(r.lines, [fill(""), fill("head")]);
+	assert.equal(r.shift, 1);
+});
+
+test("panelLines: middle member drops leading blanks", () => {
+	const r = panelLines(["", "row", ""], { first: false, last: false, fill });
+	assert.deepEqual(r.lines, [fill("row"), fill("")]);
+	assert.equal(r.shift, -1);
+});
+
+test("panelLines: empty child stays empty", () => {
+	assert.deepEqual(panelLines([], { first: true, last: true, fill }), { lines: [], shift: 0, bottom: false });
+});
