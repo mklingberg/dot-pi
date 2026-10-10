@@ -7,15 +7,18 @@
  * - the current phase is the first not-done phase (no PLANs yet = not done);
  *   phases under ROADMAP's `## Deferred` are skipped
  *
- * /plan            cycle full → compact → hidden
+ * /plan            settings (view, pending plans, titles, tasks, issues, deferred, done)
  * /plan full|compact|hidden|refresh
+ *
+ * Settings persist in <agentDir>/planning-panel.json.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth } from "@earendil-works/pi-tui";
+import { getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
+import { Container, type SettingItem, SettingsList, truncateToWidth } from "@earendil-works/pi-tui";
 
 type Mode = "full" | "compact" | "hidden";
 
@@ -45,6 +48,54 @@ interface Snapshot {
 
 const WIDGET_KEY = "planning-panel";
 const MODES: Mode[] = ["full", "compact", "hidden"];
+const PENDING_VALUES = ["3", "5", "10", "all"];
+
+interface Settings {
+	view: Mode;
+	pendingPlans: string; // one of PENDING_VALUES
+	showTitles: boolean;
+	showTasks: boolean;
+	showIssues: boolean;
+	showDeferred: boolean;
+	showDone: boolean;
+}
+
+const DEFAULT_SETTINGS: Settings = {
+	view: "full",
+	pendingPlans: "5",
+	showTitles: true,
+	showTasks: true,
+	showIssues: true,
+	showDeferred: true,
+	showDone: true,
+};
+
+function settingsPath(): string {
+	try {
+		return path.join(getAgentDir(), "planning-panel.json");
+	} catch {
+		return path.join(os.homedir(), ".pi", "agent", "planning-panel.json");
+	}
+}
+
+function loadSettings(): Settings {
+	try {
+		const raw = JSON.parse(fs.readFileSync(settingsPath(), "utf8"));
+		const s = { ...DEFAULT_SETTINGS, ...raw };
+		if (!MODES.includes(s.view)) s.view = DEFAULT_SETTINGS.view;
+		if (!PENDING_VALUES.includes(String(s.pendingPlans))) s.pendingPlans = DEFAULT_SETTINGS.pendingPlans;
+		s.pendingPlans = String(s.pendingPlans);
+		return s;
+	} catch {
+		return { ...DEFAULT_SETTINGS };
+	}
+}
+
+function saveSettings(settings: Settings): void {
+	try {
+		fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2) + "\n");
+	} catch {}
+}
 
 function findPlanningDir(cwd: string): string | undefined {
 	const stop = path.dirname(os.homedir());
@@ -208,11 +259,11 @@ function currentPhase(s: Snapshot): Phase | undefined {
 	return s.phases.find((p) => !p.deferred && !phaseDone(p));
 }
 
-const MAX_PENDING_PLANS = 5;
-
 /** Layout mirrors pi-subagents' "● Agents" widget: heading, dim tree connectors,
  *  status icon + bold name for the active row, dim " · " stats, "⎿" detail lines. */
-function render(s: Snapshot, mode: Mode, theme: any, width: number): string[] {
+function render(s: Snapshot, opts: Settings, theme: any, width: number): string[] {
+	const mode = opts.view;
+	const maxPending = opts.pendingPlans === "all" ? Infinity : Number(opts.pendingPlans);
 	const fg = (color: string, text: string) => theme.fg(color, text);
 	const sep = fg("dim", " · ");
 	const active = s.phases.filter((p) => !p.deferred);
@@ -222,7 +273,7 @@ function render(s: Snapshot, mode: Mode, theme: any, width: number): string[] {
 	const headingColor = cur ? "accent" : "dim";
 
 	const stats = [`${plansDone}/${plansTotal} plans`];
-	if (s.openIssues > 0) stats.push(fg("warning", `${s.openIssues} open issue${s.openIssues === 1 ? "" : "s"}`));
+	if (opts.showIssues && s.openIssues > 0) stats.push(fg("warning", `${s.openIssues} open issue${s.openIssues === 1 ? "" : "s"}`));
 	if (!cur && active.length > 0) stats.push(fg("success", "all done"));
 	if (mode === "compact" && cur) stats.push(`now ${cur.key} ${cur.name} ${doneCount(cur)}/${totalCount(cur)}`);
 
@@ -232,7 +283,11 @@ function render(s: Snapshot, mode: Mode, theme: any, width: number): string[] {
 	if (mode === "compact") return [truncateToWidth(heading, width)];
 
 	// Each phase = one row plus optional detail lines (current phase only).
-	const rows: { head: string; details: string[] }[] = s.phases.map((p) => {
+	const visible = s.phases.filter(
+		(p) => (opts.showDeferred || !p.deferred) && (opts.showDone || p.deferred || !phaseDone(p)),
+	);
+	const hiddenDone = opts.showDone ? 0 : active.filter(phaseDone).length;
+	const rows: { head: string; details: string[] }[] = visible.map((p) => {
 		const d = doneCount(p);
 		const t = totalCount(p);
 		const isCur = p === cur;
@@ -255,15 +310,19 @@ function render(s: Snapshot, mode: Mode, theme: any, width: number): string[] {
 			const pending = p.plans.filter((x) => !x.done);
 			const doneN = p.plans.length - pending.length;
 			if (doneN > 0) details.push(fg("success", "✓") + " " + fg("dim", `${doneN} done`));
-			for (const plan of pending.slice(0, MAX_PENDING_PLANS)) {
-				const tasks = plan.tasks > 0 ? sep + fg("dim", `${plan.tasks} task${plan.tasks === 1 ? "" : "s"}`) : "";
-				const title = plan.title ? " " + fg("muted", plan.title) : "";
+			for (const plan of pending.slice(0, maxPending)) {
+				const tasks = opts.showTasks && plan.tasks > 0 ? sep + fg("dim", `${plan.tasks} task${plan.tasks === 1 ? "" : "s"}`) : "";
+				const title = opts.showTitles && plan.title ? " " + fg("muted", plan.title) : "";
 				details.push(fg("muted", "○") + " " + fg("text", plan.id) + title + tasks);
 			}
-			if (pending.length > MAX_PENDING_PLANS) details.push(fg("dim", `+${pending.length - MAX_PENDING_PLANS} more`));
+			if (pending.length > maxPending) details.push(fg("dim", `+${pending.length - maxPending} more`));
 		}
 		return { head, details };
 	});
+
+	if (hiddenDone > 0) {
+		rows.unshift({ head: fg("success", "✓") + " " + fg("dim", `${hiddenDone} phase${hiddenDone === 1 ? "" : "s"} done`), details: [] });
+	}
 
 	const lines = [heading];
 	rows.forEach((row, i) => {
@@ -279,7 +338,7 @@ function render(s: Snapshot, mode: Mode, theme: any, width: number): string[] {
 }
 
 export default function planningPanel(pi: ExtensionAPI) {
-	let mode: Mode = "full";
+	const settings: Settings = loadSettings();
 	let planningDir: string | undefined;
 	let snapshot: Snapshot | undefined;
 	let watcher: fs.FSWatcher | undefined;
@@ -306,7 +365,7 @@ export default function planningPanel(pi: ExtensionAPI) {
 
 	const mount = (ctx: ExtensionContext) => {
 		if (!ctx.hasUI) return;
-		if (!planningDir || mode === "hidden") {
+		if (!planningDir || settings.view === "hidden") {
 			ctx.ui.setWidget(WIDGET_KEY, undefined);
 			requestRender = undefined;
 			return;
@@ -314,7 +373,7 @@ export default function planningPanel(pi: ExtensionAPI) {
 		ctx.ui.setWidget(WIDGET_KEY, (tui, theme) => {
 			requestRender = () => tui.requestRender();
 			return {
-				render: (width: number) => (snapshot ? render(snapshot, mode, theme, width) : []),
+				render: (width: number) => (snapshot ? render(snapshot, settings, theme, width) : []),
 				invalidate: () => {},
 				dispose: () => {
 					requestRender = undefined;
@@ -365,8 +424,60 @@ export default function planningPanel(pi: ExtensionAPI) {
 		lastCtx?.hasUI && lastCtx.ui.setWidget(WIDGET_KEY, undefined);
 	});
 
+	const openSettings = async (ctx: ExtensionContext) => {
+		const bool = (v: boolean) => (v ? "true" : "false");
+		const items: SettingItem[] = [
+			{ id: "view", label: "View", currentValue: settings.view, values: [...MODES],
+				description: "full: phases + current plans · compact: one heading line · hidden: no panel" },
+			{ id: "pendingPlans", label: "Pending plans shown", currentValue: settings.pendingPlans, values: PENDING_VALUES,
+				description: "Max pending plans listed under the current phase; the rest collapse into \"+N more\"" },
+			{ id: "showTitles", label: "Show plan titles", currentValue: bool(settings.showTitles), values: ["true", "false"],
+				description: "First sentence of the plan's <objective> after the plan id" },
+			{ id: "showTasks", label: "Show task counts", currentValue: bool(settings.showTasks), values: ["true", "false"],
+				description: "\"· N tasks\" after each pending plan" },
+			{ id: "showIssues", label: "Show open issues", currentValue: bool(settings.showIssues), values: ["true", "false"],
+				description: "Open ISSUES.md entries counted in the heading" },
+			{ id: "showDeferred", label: "Show deferred phases", currentValue: bool(settings.showDeferred), values: ["true", "false"],
+				description: "Phases under ROADMAP's ## Deferred, shown as ⊘ rows" },
+			{ id: "showDone", label: "Show done phases", currentValue: bool(settings.showDone), values: ["true", "false"],
+				description: "false collapses finished phases into one \"✓ N phases done\" row — handy for long roadmaps" },
+		];
+
+		await ctx.ui.custom((tui, theme, _kb, done) => {
+			const container = new Container();
+			container.addChild({
+				render: () => [theme.fg("accent", theme.bold("Planning panel")), ""],
+				invalidate: () => {},
+			});
+			const list = new SettingsList(
+				items,
+				items.length + 2,
+				getSettingsListTheme(),
+				(id, value) => {
+					if (id === "view") settings.view = value as Mode;
+					else if (id === "pendingPlans") settings.pendingPlans = value;
+					else (settings as any)[id] = value === "true";
+					saveSettings(settings);
+					mount(ctx);
+					requestRender?.();
+				},
+				() => done(undefined),
+				{ enableSearch: true },
+			);
+			container.addChild(list);
+			return {
+				render: (width: number) => container.render(width),
+				invalidate: () => container.invalidate(),
+				handleInput: (data: string) => {
+					list.handleInput(data);
+					tui.requestRender();
+				},
+			};
+		});
+	};
+
 	pi.registerCommand("plan", {
-		description: "Planning panel: cycle full/compact/hidden, or /plan full|compact|hidden|refresh",
+		description: "Planning panel settings, or /plan full|compact|hidden|refresh",
 		getArgumentCompletions: (prefix) =>
 			[...MODES, "refresh"].filter((m) => m.startsWith(prefix)).map((m) => ({ value: m, label: m })),
 		handler: async (args, ctx) => {
@@ -376,15 +487,19 @@ export default function planningPanel(pi: ExtensionAPI) {
 				if (!planningDir) ctx.ui.notify("No .planning/ found from this directory", "info");
 				return;
 			}
-			if ((MODES as string[]).includes(arg)) mode = arg as Mode;
-			else mode = MODES[(MODES.indexOf(mode) + 1) % MODES.length];
-			if (!planningDir) start(ctx);
-			if (!planningDir) {
-				ctx.ui.notify("No .planning/ found from this directory", "info");
+			if ((MODES as string[]).includes(arg)) {
+				settings.view = arg as Mode;
+				saveSettings(settings);
+				if (!planningDir) start(ctx);
+				else mount(ctx);
+				ctx.ui.notify(`Planning panel: ${settings.view}`, "info");
 				return;
 			}
-			mount(ctx);
-			ctx.ui.notify(`Planning panel: ${mode}`, "info");
+			if (ctx.mode !== "tui") {
+				ctx.ui.notify("/plan settings need the TUI; use /plan full|compact|hidden", "info");
+				return;
+			}
+			await openSettings(ctx);
 		},
 	});
 }
