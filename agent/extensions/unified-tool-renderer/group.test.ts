@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_GROUP_EXCLUDE, createGroupTracker, leadingNoticeKey, summarize, syncExpandEdge, type GroupItem } from "./group.ts";
+import { DEFAULT_GROUP_EXCLUDE, createGroupTracker, clearGroupFlips, leadingNoticeKey, rowExpanded, summarize, syncExpandEdge, toggleFlip, type GroupItem } from "./group.ts";
 
 const item = (toolName: string, status: GroupItem["status"] = "done", args: any = {}): GroupItem => ({
 	id: Math.random().toString(36),
@@ -350,4 +350,36 @@ test("syncExpandEdge: first sight expanded (global ctrl+o) expands; bounded", ()
 	syncExpandEdge(g, seen, "y", false, 2);
 	syncExpandEdge(g, seen, "z", false, 2);
 	assert.equal(seen.size, 2);
+});
+
+test("rowExpanded / toggleFlip: XOR with global, capped", () => {
+	const f = new Set<string>();
+	assert.equal(rowExpanded(false, f, "a"), false);
+	assert.equal(toggleFlip(f, "a"), true);
+	assert.equal(rowExpanded(false, f, "a"), true);
+	assert.equal(rowExpanded(true, f, "a"), false);
+	assert.equal(rowExpanded(true, f, undefined), true);
+	assert.equal(toggleFlip(f, "a"), false);
+	assert.equal(f.size, 0);
+	toggleFlip(f, "x", 2); toggleFlip(f, "y", 2); toggleFlip(f, "z", 2);
+	assert.deepEqual([...f], ["y", "z"]);
+});
+
+test("syncExpandEdge clears the group's flips on a ctrl+o edge of a known row only", () => {
+	const g = { items: [{ id: "a", toolName: "read", args: {}, status: "done" as const }, { id: "b", toolName: "read", args: {}, status: "done" as const }], notices: [{ key: "n1", at: 0 }], expanded: true };
+	const other = new Set(["zzz"]);
+	const f = new Set(["a", "b", "n1", "zzz"]);
+	const seen = new Map<string, boolean>();
+	assert.equal(syncExpandEdge(g, seen, "a", true, 512, f), false); // first sight: no clear
+	assert.equal(f.size, 4);
+	assert.equal(syncExpandEdge(g, seen, "a", true, 512, f), false); // no edge
+	assert.equal(f.size, 4);
+	seen.set("a", false);
+	assert.equal(syncExpandEdge(g, seen, "a", true, 512, f), false); // ctrl+o edge, group already expanded
+	assert.deepEqual([...f], ["zzz"]);
+	f.add("b");
+	assert.equal(syncExpandEdge(g, seen, "a", false, 512, f), true); // ctrl+o off collapses
+	assert.deepEqual([...f], ["zzz"]);
+	clearGroupFlips(g, other);
+	assert.deepEqual([...other], ["zzz"]);
 });

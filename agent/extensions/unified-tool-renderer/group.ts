@@ -42,14 +42,37 @@ export function leadingNoticeKey(group: ToolGroup): string | undefined {
  * group.expanded (a notification click) therefore sticks. Unseen rows count
  * as previously collapsed. Returns true when group.expanded changed.
  */
-export function syncExpandEdge(group: ToolGroup, seen: Map<string, boolean>, id: string, expanded: boolean, max = 512): boolean {
+export function syncExpandEdge(group: ToolGroup, seen: Map<string, boolean>, id: string, expanded: boolean, max = 512, flipped?: Set<string>): boolean {
+	const known = seen.has(id);
 	const prev = seen.get(id) ?? false;
 	seen.delete(id);
 	seen.set(id, expanded);
 	while (seen.size > max) seen.delete(seen.keys().next().value!);
-	if (expanded === prev || group.expanded === expanded) return false;
+	if (expanded === prev) return false;
+	// A known row's ctx.expanded only changes via global ctrl+o: every row follows the global state again.
+	if (known && flipped) clearGroupFlips(group, flipped);
+	if (group.expanded === expanded) return false;
 	group.expanded = expanded;
 	return true;
+}
+
+/** Per-row expanded state: Pi's global/row `expanded` XOR the extension-local click flip. */
+export function rowExpanded(globalExpanded: boolean, flipped: Set<string>, id: string | undefined): boolean {
+	return globalExpanded !== Boolean(id && flipped.has(id));
+}
+
+/** Flip a row's local expanded state; capped (oldest evicted). Returns the new flipped state. */
+export function toggleFlip(flipped: Set<string>, id: string, max = 512): boolean {
+	if (flipped.delete(id)) return false;
+	flipped.add(id);
+	while (flipped.size > max) flipped.delete(flipped.values().next().value!);
+	return true;
+}
+
+/** Drop the local flips of every member (tool rows + notifications) of a group. */
+export function clearGroupFlips(group: ToolGroup, flipped: Set<string>): void {
+	for (const i of group.items) flipped.delete(i.id);
+	for (const n of group.notices) flipped.delete(n.key);
 }
 
 export interface GroupTrackerOptions {
