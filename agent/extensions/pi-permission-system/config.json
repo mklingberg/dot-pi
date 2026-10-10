@@ -1,9 +1,10 @@
 {
   "$schema": "https://raw.githubusercontent.com/gotgenes/pi-packages/main/packages/pi-permission-system/schemas/permissions.schema.json",
+  "debugLog": false,
   "permissionReviewLog": true,
+  "yoloMode": false,
   "permission": {
     "*": "allow",
-    "external_directory": "allow",
     "path": {
       "*": "allow",
       "~/.ssh/*": "deny",
@@ -94,6 +95,7 @@
       "*/.git/hooks/*": "deny",
       "/private/etc/*": "deny"
     },
+    "external_directory": "allow",
     "bash": {
       "*": "allow",
       "rm *": "ask",
