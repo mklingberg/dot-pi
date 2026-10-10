@@ -4,6 +4,7 @@
   "graceTurns": 10,
   "defaultJoinMode": "smart",
   "schedulingEnabled": false,
+  "workflowsEnabled": false,
   "scopeModels": true,
   "disableDefaultAgents": false,
   "toolDescriptionMode": "custom",
