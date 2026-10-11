@@ -127,7 +127,7 @@
       }
     },
     "userMessages": {
-      "enabled": true,
+      "enabled": false,
       "style": "framed-copy-friendly",
       "colorSource": "theme",
       "styles": {
