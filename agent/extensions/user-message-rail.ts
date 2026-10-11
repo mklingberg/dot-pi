@@ -8,6 +8,9 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 const RAIL = "▎";
 const HINT = "click to copy";
+const COPIED = "copied message";
+/** How long the label reads COPIED after a click. Reverts on the first redraw after this. */
+const COPIED_MS = 2000;
 const PATCH = Symbol.for("local.user-message-rail");
 const LEADING_OSC133 = /^(?:\x1b\]133;[A-Z]\x07)+/;
 // eslint-disable-next-line no-control-regex
@@ -21,6 +24,8 @@ interface PatchState {
 	copy?: (text: string) => Promise<void>;
 }
 
+/** Click time per component, for the transient COPIED label. */
+const copiedAt = new WeakMap<object, number>();
 /** Session timestamp per component, once matched to a branch entry. */
 const stamps = new WeakMap<object, number>();
 /** Entry id -> component showing it (handles repeated identical messages; dead refs free the entry after a chat rebuild). */
@@ -111,10 +116,13 @@ export default function (pi: ExtensionAPI) {
 				const markers = lines[row].match(LEADING_OSC133)?.[0] ?? "";
 				const blank = lines[row].slice(markers.length).replace(ANSI, "").trim() === "";
 				const time = hhmm(timestampFor(this, state.ctx) ?? Date.now());
-				const label = state.copy ? `${HINT} · ${time}` : time;
-				if (blank && inner > label.length + 2) {
-					const pad = " ".repeat(inner - label.length - 1);
-					lines[row] = markers + theme.bg("userMessageBg", `${pad}${theme.fg("dim", label)} `);
+				const copied = Date.now() - (copiedAt.get(this) ?? 0) < COPIED_MS;
+				const action = copied ? theme.fg("success", COPIED) : theme.fg("dim", HINT);
+				const plain = state.copy ? `${copied ? COPIED : HINT} · ${time}` : time;
+				const styled = state.copy ? `${action}${theme.fg("dim", ` · ${time}`)}` : theme.fg("dim", time);
+				if (blank && inner > plain.length + 2) {
+					const pad = " ".repeat(inner - plain.length - 1);
+					lines[row] = markers + theme.bg("userMessageBg", `${pad}${styled} `);
 				}
 			}
 			let rows = lines.length;
@@ -133,15 +141,16 @@ export default function (pi: ExtensionAPI) {
 			const rows = boxRows.get(this);
 			if (state.copy && event?.type === "click" && event.button === "left" && rows !== undefined && event.y >= 0 && event.y < rows) {
 				const text: string = this.text ?? "";
-				const notify = (msg: string, type: "info" | "error") => {
+				// Optimistic: the TUI redraws right after a handled click, before the async copy settles.
+				copiedAt.set(this, Date.now());
+				this.invalidate?.();
+				setTimeout(() => this.invalidate?.(), COPIED_MS + 50).unref?.();
+				state.copy(text).catch((err) => {
+					copiedAt.delete(this);
 					try {
-						state.ctx?.ui?.notify?.(msg, type);
+						state.ctx?.ui?.notify?.(`Copy failed: ${err?.message ?? err}`, "error");
 					} catch {}
-				};
-				state.copy?.(text).then(
-					() => notify("Copied message", "info"),
-					(err) => notify(`Copy failed: ${err?.message ?? err}`, "error"),
-				);
+				});
 				return { handled: true };
 			}
 			return state.originalMouse?.call(this, event);
