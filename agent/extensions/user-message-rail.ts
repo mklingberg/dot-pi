@@ -1,7 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-// User messages: accent-colored left rail on the userMessageBg surface, plus a
-// "click to copy" hint on the bottom padding row; a click anywhere in the box copies the raw message.
+// User messages: accent-colored left rail on the userMessageBg surface, plus
+// "click to copy · HH:MM" on the bottom padding row; a click anywhere in the box
+// copies the raw message. The time comes from the session entry, so it survives reload/resume.
 // Installed at session_start so it wraps whatever renderer other extensions
 // (pi-tool-renderer, zentui) patched in at load time.
 
@@ -20,6 +21,47 @@ interface PatchState {
 	copy?: (text: string) => Promise<void>;
 }
 
+/** Session timestamp per component, once matched to a branch entry. */
+const stamps = new WeakMap<object, number>();
+/** Entry id -> component showing it (handles repeated identical messages; dead refs free the entry after a chat rebuild). */
+let claimed = new Map<string, WeakRef<object>>();
+
+function entryText(message: any): string {
+	if (typeof message?.content === "string") return message.content;
+	if (!Array.isArray(message?.content)) return "";
+	return message.content.filter((c: any) => c?.type === "text").map((c: any) => c.text).join("");
+}
+
+function timestampFor(component: any, ctx: ExtensionContext | undefined): number | undefined {
+	const known = stamps.get(component);
+	if (known !== undefined) return known;
+	const text: string = component?.text ?? "";
+	let fallback: number | undefined;
+	try {
+		for (const entry of (ctx as any)?.sessionManager?.getBranch?.() ?? []) {
+			if (entry?.type !== "message" || entry.message?.role !== "user") continue;
+			if (entryText(entry.message) !== text) continue;
+			const ts = typeof entry.message.timestamp === "number" ? entry.message.timestamp : Date.parse(entry.timestamp);
+			if (!Number.isFinite(ts)) continue;
+			const owner = claimed.get(entry.id)?.deref();
+			if (owner && owner !== component) {
+				fallback ??= ts; // claimed by a component a chat rebuild may have replaced; show, don't cache
+				continue;
+			}
+			claimed.set(entry.id, new WeakRef(component));
+			stamps.set(component, ts);
+			return ts;
+		}
+	} catch {}
+	if (fallback !== undefined) return fallback;
+	return undefined; // not persisted yet (live message): caller falls back to now, retried next render
+}
+
+function hhmm(ts: number): string {
+	const d = new Date(ts);
+	return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
 /** Number of box rows (excluding a trailing "" break row), per component, from the latest render. */
 const boxRows = new WeakMap<object, number>();
 
@@ -33,6 +75,7 @@ export default function (pi: ExtensionAPI) {
 		if (!proto || typeof proto.render !== "function") return;
 
 		const existing = proto[PATCH] as PatchState | undefined;
+		claimed = new Map();
 		if (existing) {
 			existing.ctx = ctx;
 			return;
@@ -61,16 +104,18 @@ export default function (pi: ExtensionAPI) {
 			const inner = width - 1;
 			const lines = state.original.call(this, inner);
 
-			// Bottom padding row = last non-empty line (pi-tool-renderer may append a "" break row).
-			for (let i = lines.length - 1; i >= 0; i--) {
-				if (lines[i] === "") continue;
-				const markers = lines[i].match(LEADING_OSC133)?.[0] ?? "";
-				const blank = lines[i].slice(markers.length).replace(ANSI, "").trim() === "";
-				if (blank && i > 0 && state.copy && inner > HINT.length + 2) {
-					const pad = " ".repeat(inner - HINT.length - 1);
-					lines[i] = markers + theme.bg("userMessageBg", `${pad}${theme.fg("dim", HINT)} `);
+			// Bottom padding row (last non-"" line; pi-tool-renderer may append a "" break row): right-aligned "click to copy · HH:MM".
+			let row = lines.length - 1;
+			while (row >= 0 && lines[row] === "") row--;
+			if (row > 0) {
+				const markers = lines[row].match(LEADING_OSC133)?.[0] ?? "";
+				const blank = lines[row].slice(markers.length).replace(ANSI, "").trim() === "";
+				const time = hhmm(timestampFor(this, state.ctx) ?? Date.now());
+				const label = state.copy ? `${HINT} · ${time}` : time;
+				if (blank && inner > label.length + 2) {
+					const pad = " ".repeat(inner - label.length - 1);
+					lines[row] = markers + theme.bg("userMessageBg", `${pad}${theme.fg("dim", label)} `);
 				}
-				break;
 			}
 			let rows = lines.length;
 			while (rows > 0 && lines[rows - 1] === "") rows--;
