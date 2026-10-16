@@ -21,6 +21,8 @@ interface PatchState {
 	originalMouse?: (event: any) => any;
 	ownMouse: boolean;
 	ctx?: ExtensionContext;
+	renderDescriptor?: PropertyDescriptor;
+	getter?: () => (width: number) => string[];
 	copy?: (text: string) => Promise<void>;
 }
 
@@ -72,6 +74,9 @@ const boxRows = new WeakMap<object, number>();
 
 export default function (pi: ExtensionAPI) {
 	let proto: Record<PropertyKey, any> | undefined;
+	// Only the instance whose UI session installed/claimed the patch may remove it: pi-subagents
+	// loads this extension into headless child sessions that emit session_shutdown on finish.
+	let owns = false;
 
 	pi.on("session_start", async (_event, ctx) => {
 		if (!ctx?.hasUI) return;
@@ -81,6 +86,7 @@ export default function (pi: ExtensionAPI) {
 
 		const existing = proto[PATCH] as PatchState | undefined;
 		claimed = new Map();
+		owns = true;
 		if (existing) {
 			existing.ctx = ctx;
 			return;
@@ -95,7 +101,7 @@ export default function (pi: ExtensionAPI) {
 		};
 		proto[PATCH] = state;
 
-		proto.render = function railUserMessageRender(this: object, width: number): string[] {
+		const render = function railUserMessageRender(this: object, width: number): string[] {
 			boxRows.delete(this);
 			const theme = state.ctx?.ui?.theme;
 			if (!theme || width < 4) return state.original.call(this, width);
@@ -136,6 +142,20 @@ export default function (pi: ExtensionAPI) {
 			});
 			return out;
 		};
+		// Accessor, not a plain assignment: other patchers' shutdown (pi-tool-renderer in subagent
+		// child sessions, whose patch state is shared via a global symbol) assign `proto.render`
+		// to restore their original, which would silently drop the rail. Assignments now replace
+		// the inner renderer and the rail stays outermost.
+		state.renderDescriptor = Object.getOwnPropertyDescriptor(proto, "render");
+		state.getter = () => render;
+		Object.defineProperty(proto, "render", {
+			configurable: true,
+			enumerable: state.renderDescriptor?.enumerable ?? true,
+			get: state.getter,
+			set(value: (width: number) => string[]) {
+				if (typeof value === "function" && value !== render) state.original = value;
+			},
+		});
 
 		proto.handleMouse = function railUserMessageMouse(this: any, event: any): any {
 			const rows = boxRows.get(this);
@@ -158,9 +178,18 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", () => {
+		if (!owns) return;
+		owns = false;
 		const state = proto?.[PATCH] as PatchState | undefined;
 		if (!proto || !state) return;
-		if (proto.render?.name === "railUserMessageRender") proto.render = state.original;
+		if (Object.getOwnPropertyDescriptor(proto, "render")?.get === state.getter) {
+			Object.defineProperty(proto, "render", {
+				configurable: true,
+				enumerable: state.renderDescriptor?.enumerable ?? true,
+				writable: true,
+				value: state.original,
+			});
+		}
 		if (proto.handleMouse?.name === "railUserMessageMouse") {
 			if (state.ownMouse) proto.handleMouse = state.originalMouse;
 			else delete proto.handleMouse;
