@@ -73,7 +73,7 @@
       "modelLabel": "id",
       "styles": {
         "starship": {
-          "format": "$cwd( on $git_branch)( $git_status)( via $runtime)$fill$model( | $thinkingLevel)($sep$context)($sep$cost)",
+          "format": "$cwd( on $git_branch)( $git_status)( via $runtime)$fill$model($sep$thinkingLevel)($sep$context)($sep$cost)",
           "responsive": true,
           "compactFormat": "$cwd$wrap(in $session_name)$wrap(on $git_branch) $git_status$wrap$context$wrap_sep($thinkingLevel)$wrap_sep$tokens$wrap_sep($codex_quota)",
           "compactMaxLines": 2,
